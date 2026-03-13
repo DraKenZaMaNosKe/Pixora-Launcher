@@ -2,6 +2,7 @@ package com.orbix.pixora.launcher.ui.drawer
 
 import android.graphics.BitmapFactory
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -20,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,6 +39,16 @@ fun AppDrawer(
 
     val filteredApps = if (searchQuery.isBlank()) apps
     else apps.filter { it.label.contains(searchQuery, ignoreCase = true) }
+
+    // Staggered entrance animation
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    val panelOffset by animateFloatAsState(
+        targetValue = if (visible) 0f else 1f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 300f),
+        label = "panel"
+    )
 
     Box(
         modifier = Modifier
@@ -55,9 +68,12 @@ fun AppDrawer(
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
                 .align(Alignment.BottomCenter)
+                .graphicsLayer {
+                    translationY = panelOffset * 800f
+                }
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(Color(0xFF141420))
-                .clickable(enabled = false) {} // Block clicks from passing through
+                .clickable(enabled = false) {}
                 .padding(top = 12.dp),
         ) {
             // Handle bar
@@ -87,16 +103,18 @@ fun AppDrawer(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // App grid
+            // App grid with staggered fan animation
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(filteredApps, key = { it.packageName }) { app ->
-                    AppGridItem(
+                itemsIndexed(filteredApps, key = { _, app -> app.packageName }) { index, app ->
+                    FanAppGridItem(
                         app = app,
+                        index = index,
+                        isVisible = visible,
                         onClick = { onAppClick(app.packageName) },
                     )
                 }
@@ -106,16 +124,47 @@ fun AppDrawer(
 }
 
 @Composable
-private fun AppGridItem(
+private fun FanAppGridItem(
     app: AppInfo,
+    index: Int,
+    isVisible: Boolean,
     onClick: () -> Unit,
 ) {
+    val delay = (index * 25).coerceAtMost(600) // stagger up to 600ms
+    val animProgress by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 400,
+            delayMillis = delay,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "fan_$index"
+    )
+
     val bitmap = remember(app.packageName) {
         BitmapFactory.decodeByteArray(app.iconBytes, 0, app.iconBytes.size)
     }
 
+    // Fan effect: each item rotates in from a different angle based on column
+    val col = index % 4
+    val startRotation = when (col) {
+        0 -> -35f
+        1 -> -15f
+        2 -> 15f
+        3 -> 35f
+        else -> 0f
+    }
+
     Column(
         modifier = Modifier
+            .graphicsLayer {
+                val progress = animProgress
+                scaleX = 0.3f + (0.7f * progress)
+                scaleY = 0.3f + (0.7f * progress)
+                rotationZ = startRotation * (1f - progress)
+                alpha = progress
+                translationY = (1f - progress) * 120f
+            }
             .clickable(onClick = onClick)
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

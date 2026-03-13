@@ -14,6 +14,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -288,6 +289,10 @@ fun HomeScreen(
                 modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f)).clickable { onOpenSettings() },
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(24.dp)) }
+            Box(
+                modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFF7C4DFF).copy(alpha = 0.5f)).clickable { viewModel.openDrawer() },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Default.Apps, contentDescription = "All apps", tint = Color.White, modifier = Modifier.size(24.dp)) }
         }
 
         // Dock bar
