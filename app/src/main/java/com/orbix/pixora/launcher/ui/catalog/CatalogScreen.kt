@@ -49,6 +49,24 @@ fun CatalogScreen(
     val stories by viewModel.stories.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val error by viewModel.error.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Show snackbar when error occurs
+    LaunchedEffect(error) {
+        error?.let {
+            snackbarHostState.showSnackbar(
+                message = "Could not load catalog. Showing cached data.",
+                actionLabel = "Retry",
+                duration = SnackbarDuration.Long,
+            ).let { result ->
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.loadCatalog()
+                }
+            }
+            viewModel.clearError()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -102,6 +120,15 @@ fun CatalogScreen(
                 }
             }
         }
+
+        // Snackbar at the bottom
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(16.dp),
+        )
     }
 }
 

@@ -38,6 +38,10 @@ import coil.request.ImageRequest
 import com.orbix.pixora.launcher.data.models.AppInfo
 import com.orbix.pixora.launcher.data.models.IconRoom
 import com.orbix.pixora.launcher.service.AppsRepository
+import com.orbix.pixora.launcher.ui.EffectKeys
+import com.orbix.pixora.launcher.ui.pixoraDataStore
+import androidx.datastore.preferences.core.edit
+import kotlinx.coroutines.launch
 
 @Composable
 fun SetupWizard(onComplete: () -> Unit) {
@@ -410,6 +414,9 @@ private fun AppsStep(onNext: () -> Unit) {
 
 @Composable
 private fun EffectsStep(onNext: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     // Request RECORD_AUDIO permission for equalizer
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -418,6 +425,12 @@ private fun EffectsStep(onNext: () -> Unit) {
     LaunchedEffect(Unit) {
         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
+
+    var touchGlow by remember { mutableStateOf(true) }
+    var equalizer by remember { mutableStateOf(true) }
+    var batteryRing by remember { mutableStateOf(true) }
+    var systemRings by remember { mutableStateOf(true) }
+    var ambientParticles by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -441,16 +454,27 @@ private fun EffectsStep(onNext: () -> Unit) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        EffectToggle("Touch Glow", "Light ripple when you touch", true)
-        EffectToggle("Equalizer", "Music visualizer bars", true)
-        EffectToggle("Battery Ring", "Circular battery indicator", true)
-        EffectToggle("System Rings", "RAM & Storage indicators", true)
-        EffectToggle("Ambient Particles", "Floating particles on home", false)
+        EffectToggle("Touch Glow", "Light ripple when you touch", touchGlow) { touchGlow = it }
+        EffectToggle("Equalizer", "Music visualizer bars", equalizer) { equalizer = it }
+        EffectToggle("Battery Ring", "Circular battery indicator", batteryRing) { batteryRing = it }
+        EffectToggle("System Rings", "RAM & Storage indicators", systemRings) { systemRings = it }
+        EffectToggle("Ambient Particles", "Floating particles on home", ambientParticles) { ambientParticles = it }
 
         Spacer(modifier = Modifier.height(40.dp))
 
         Button(
-            onClick = onNext,
+            onClick = {
+                scope.launch {
+                    context.pixoraDataStore.edit { prefs ->
+                        prefs[EffectKeys.TOUCH_GLOW] = touchGlow
+                        prefs[EffectKeys.EQUALIZER] = equalizer
+                        prefs[EffectKeys.BATTERY_RING] = batteryRing
+                        prefs[EffectKeys.SYSTEM_RINGS] = systemRings
+                        prefs[EffectKeys.AMBIENT_PARTICLES] = ambientParticles
+                    }
+                    onNext()
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -465,9 +489,12 @@ private fun EffectsStep(onNext: () -> Unit) {
 }
 
 @Composable
-private fun EffectToggle(title: String, subtitle: String, defaultOn: Boolean) {
-    var enabled by remember { mutableStateOf(defaultOn) }
-
+private fun EffectToggle(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onChanged: (Boolean) -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -484,7 +511,7 @@ private fun EffectToggle(title: String, subtitle: String, defaultOn: Boolean) {
         }
         Switch(
             checked = enabled,
-            onCheckedChange = { enabled = it },
+            onCheckedChange = onChanged,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color(0xFF7C4DFF),
                 checkedTrackColor = Color(0xFF7C4DFF).copy(alpha = 0.4f),

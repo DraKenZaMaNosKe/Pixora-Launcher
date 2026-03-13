@@ -19,6 +19,7 @@ import com.orbix.pixora.launcher.ui.catalog.CatalogViewModel
 import com.orbix.pixora.launcher.ui.catalog.WallpaperPreviewScreen
 import com.orbix.pixora.launcher.ui.home.HomeScreen
 import com.orbix.pixora.launcher.ui.home.HomeViewModel
+import com.orbix.pixora.launcher.ui.settings.SettingsScreen
 import com.orbix.pixora.launcher.ui.setup.SetupWizard
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -33,6 +34,7 @@ fun PixoraLauncherApp() {
 
     var setupDone by remember { mutableStateOf<Boolean?>(null) }
     var showCatalog by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var showWallpaperPreview by remember { mutableStateOf(false) }
     var showStoryDetail by remember { mutableStateOf(false) }
     var showIconRoomPreview by remember { mutableStateOf(false) }
@@ -70,8 +72,20 @@ fun PixoraLauncherApp() {
     Box(modifier = Modifier.fillMaxSize()) {
         HomeScreen(
             viewModel = homeViewModel,
-            onOpenCatalog = { showCatalog = true }
+            onOpenCatalog = { showCatalog = true },
+            onOpenSettings = { showSettings = true },
         )
+
+        AnimatedVisibility(
+            visible = showSettings,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+        ) {
+            SettingsScreen(
+                viewModel = homeViewModel,
+                onBack = { showSettings = false },
+            )
+        }
 
         AnimatedVisibility(
             visible = showCatalog && !showWallpaperPreview && !showStoryDetail && !showIconRoomPreview,
