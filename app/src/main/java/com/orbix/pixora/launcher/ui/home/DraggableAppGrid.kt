@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
@@ -25,11 +26,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -71,42 +76,50 @@ fun DraggableAppGrid(
 
     var draggedIndex by remember { mutableIntStateOf(-1) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var hoverTargetIndex by remember { mutableIntStateOf(-1) }
 
     var gridLeft by remember { mutableFloatStateOf(0f) }
     var gridRight by remember { mutableFloatStateOf(0f) }
 
     var contextMenuIndex by remember { mutableIntStateOf(-1) }
 
-    // Track how close the dragged icon is to each edge (0 = not near, 1 = at edge)
     var nearRightEdge by remember { mutableFloatStateOf(0f) }
     var nearLeftEdge by remember { mutableFloatStateOf(0f) }
 
-    // Compute edge proximity during drag
-    val edgeFraction = 0.20f // 20% of grid width = edge zone
+    val edgeFraction = 0.20f
+
+    // Compute edge proximity + hover target during drag
     LaunchedEffect(draggedIndex, dragOffset) {
         if (draggedIndex < 0) {
             nearRightEdge = 0f
             nearLeftEdge = 0f
+            hoverTargetIndex = -1
             return@LaunchedEffect
         }
         val cellPos = cellPositions[draggedIndex]
         val cellSize = cellSizes[draggedIndex]
         if (cellPos != null && cellSize != null) {
             val centerX = cellPos.x + cellSize.width / 2f + dragOffset.x
+            val centerY = cellPos.y + cellSize.height / 2f + dragOffset.y
             val gridWidth = gridRight - gridLeft
             val edgeZone = gridWidth * edgeFraction
 
-            // Right edge proximity: 0..1
             val distFromRight = gridRight - centerX
             nearRightEdge = if (distFromRight < edgeZone) {
                 ((edgeZone - distFromRight) / edgeZone).coerceIn(0f, 1f)
             } else 0f
 
-            // Left edge proximity: 0..1
             val distFromLeft = centerX - gridLeft
             nearLeftEdge = if (distFromLeft < edgeZone) {
                 ((edgeZone - distFromLeft) / edgeZone).coerceIn(0f, 1f)
             } else 0f
+
+            // Find which cell the dragged icon is hovering over
+            hoverTargetIndex = if (nearRightEdge > 0.1f || nearLeftEdge > 0.1f) {
+                -1 // Near edge, no cell highlight
+            } else {
+                findTargetCell(Offset(centerX, centerY), cellPositions, cellSizes, pageSize)
+            }
         }
     }
 
@@ -116,7 +129,17 @@ fun DraggableAppGrid(
         label = "wobble"
     )
 
-    // Animated glow alpha for edge indicators
+    // Pulsing animation for dashed borders
+    val dashPulse by rememberInfiniteTransition(label = "dash").animateFloat(
+        initialValue = 0.15f,
+        targetValue = 0.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "dash_pulse"
+    )
+
     val glowPulse by rememberInfiniteTransition(label = "glow").animateFloat(
         initialValue = 0.4f,
         targetValue = 1f,
@@ -127,7 +150,6 @@ fun DraggableAppGrid(
         label = "glow_pulse"
     )
 
-    // Animated arrow offset for "sliding" effect
     val arrowSlide by rememberInfiniteTransition(label = "arrow").animateFloat(
         initialValue = 0f,
         targetValue = 12f,
@@ -137,6 +159,11 @@ fun DraggableAppGrid(
         ),
         label = "arrow_slide"
     )
+
+    // Colors
+    val accentColor = Color(0xFF7C4DFF)
+    val emptySlotBorderColor = Color.White.copy(alpha = dashPulse)
+    val hoverHighlightColor = accentColor.copy(alpha = 0.35f)
 
     Box(
         modifier = modifier.onGloballyPositioned { coords ->
@@ -161,6 +188,8 @@ fun DraggableAppGrid(
                         val pkg = displaySlots.getOrNull(index)
                         val app = pkg?.let { appsMap[it] }
                         val isDragged = index == draggedIndex
+                        val isEmpty = app == null
+                        val isHoverTarget = hoverTargetIndex == index && index != draggedIndex
 
                         Box(
                             modifier = Modifier
@@ -171,6 +200,41 @@ fun DraggableAppGrid(
                                     cellSizes[index] = coords.size
                                 }
                                 .zIndex(if (isDragged) 10f else 0f)
+                                // Dashed border on empty cells in edit mode
+                                .then(
+                                    if (isEditMode && isEmpty && !isHoverTarget) {
+                                        Modifier
+                                            .padding(6.dp)
+                                            .drawBehind {
+                                                drawRoundRect(
+                                                    color = emptySlotBorderColor,
+                                                    cornerRadius = CornerRadius(12.dp.toPx()),
+                                                    style = Stroke(
+                                                        width = 1.5.dp.toPx(),
+                                                        pathEffect = PathEffect.dashPathEffect(
+                                                            floatArrayOf(8.dp.toPx(), 6.dp.toPx()),
+                                                            0f,
+                                                        ),
+                                                    ),
+                                                )
+                                            }
+                                    } else if (isEditMode && isHoverTarget) {
+                                        // Glow highlight on hover target
+                                        Modifier
+                                            .padding(4.dp)
+                                            .drawBehind {
+                                                drawRoundRect(
+                                                    color = hoverHighlightColor,
+                                                    cornerRadius = CornerRadius(14.dp.toPx()),
+                                                )
+                                                drawRoundRect(
+                                                    color = accentColor.copy(alpha = 0.6f),
+                                                    cornerRadius = CornerRadius(14.dp.toPx()),
+                                                    style = Stroke(width = 2.dp.toPx()),
+                                                )
+                                            }
+                                    } else Modifier
+                                )
                                 .graphicsLayer {
                                     if (isDragged) {
                                         translationX = dragOffset.x
@@ -178,12 +242,16 @@ fun DraggableAppGrid(
                                         scaleX = 1.15f
                                         scaleY = 1.15f
                                         shadowElevation = 16f
-                                        // Tint towards purple when near edge
                                         val edgeProximity = maxOf(nearRightEdge, nearLeftEdge)
                                         alpha = 1f - (edgeProximity * 0.3f)
                                     } else if (isEditMode && app != null) {
                                         val wobbleDir = if (index % 2 == 0) wobbleAngle else -wobbleAngle
                                         rotationZ = wobbleDir
+                                    }
+                                    // Subtle scale-up on hover target
+                                    if (isHoverTarget) {
+                                        scaleX = 1.05f
+                                        scaleY = 1.05f
                                     }
                                 }
                                 .then(
@@ -311,7 +379,7 @@ fun DraggableAppGrid(
                         Brush.horizontalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color(0xFF7C4DFF).copy(alpha = nearRightEdge * glowPulse * 0.6f),
+                                accentColor.copy(alpha = nearRightEdge * glowPulse * 0.6f),
                             )
                         )
                     ),
@@ -344,7 +412,7 @@ fun DraggableAppGrid(
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(
-                                Color(0xFF7C4DFF).copy(alpha = nearLeftEdge * glowPulse * 0.6f),
+                                accentColor.copy(alpha = nearLeftEdge * glowPulse * 0.6f),
                                 Color.Transparent,
                             )
                         )

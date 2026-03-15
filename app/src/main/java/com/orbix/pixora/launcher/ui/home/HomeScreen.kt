@@ -14,11 +14,16 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -70,6 +75,7 @@ fun HomeScreen(
     val gridSlots by viewModel.gridSlots.collectAsState()
 
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val dockApps = remember(dockPackages, apps) {
         dockPackages.mapNotNull { pkg -> apps.find { it.packageName == pkg } }
@@ -193,7 +199,7 @@ fun HomeScreen(
                             val targetPage = viewModel.moveAppToPrevPage(pageOffset + fromLocal)
                             if (targetPage >= 0) {
                                 scope.launch {
-                                    pagerState.animateScrollToPage(targetPage + 1)
+                                    pagerState.animateScrollToPage(targetPage + 1) // +1 for clock page
                                 }
                             }
                         },
@@ -300,7 +306,54 @@ fun HomeScreen(
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            PageIndicator(pageCount = pageCount, currentPage = pagerState.currentPage, modifier = Modifier.padding(bottom = 12.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(bottom = 12.dp),
+            ) {
+                // Remove page button
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color.Red.copy(alpha = 0.5f))
+                        .clickable {
+                            val appPageIndex = pagerState.currentPage - 1 // -1 for clock page
+                            if (appPageIndex >= 0) {
+                                val removed = viewModel.removePage(appPageIndex)
+                                if (removed) {
+                                    val newPage = (pagerState.currentPage - 1).coerceAtLeast(1)
+                                    scope.launch { pagerState.animateScrollToPage(newPage) }
+                                } else {
+                                    scope.launch { snackbarHostState.showSnackbar("Move icons first to delete this page") }
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Remove page", tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+
+                PageIndicator(pageCount = pageCount, currentPage = pagerState.currentPage)
+
+                Spacer(modifier = Modifier.width(10.dp))
+                // Add page button
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF7C4DFF).copy(alpha = 0.6f))
+                        .clickable {
+                            val appPageIndex = pagerState.currentPage - 1 // -1 for clock page
+                            val newPage = viewModel.addPageAfter(appPageIndex.coerceAtLeast(0))
+                            scope.launch { pagerState.animateScrollToPage(newPage + 1) } // +1 for clock page
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add page", tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+            }
 
             if (dockApps.isNotEmpty()) {
                 Row(
@@ -316,6 +369,18 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = "Swipe up for apps", fontSize = 11.sp, color = Color.White.copy(alpha = 0.25f))
+        }
+
+        // Snackbar
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 100.dp),
+        ) { data ->
+            Snackbar(
+                snackbarData = data,
+                containerColor = Color(0xFF1A1A2E),
+                contentColor = Color.White,
+            )
         }
 
         // App drawer overlay

@@ -23,6 +23,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val appsRepo = AppsRepository(application)
     private val dataStore = application.pixoraDataStore
+    private val gson = Gson()
 
     private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val installedApps: StateFlow<List<AppInfo>> = _installedApps
@@ -42,6 +43,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Grid slots: nullable list where null = empty slot.
      * Always padded to a multiple of APPS_PER_PAGE so every page has exactly 16 cells.
+     * Saved PER wallpaper — each wallpaper has its own icon layout.
      */
     private val _gridSlots = MutableStateFlow<List<String?>>(emptyList())
     val gridSlots: StateFlow<List<String?>> = _gridSlots
@@ -61,7 +63,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         val KEY_BACKGROUND = stringPreferencesKey("home_background")
         val KEY_DOCK_APPS = stringPreferencesKey("dock_apps")
-        val KEY_GRID_SLOTS = stringPreferencesKey("grid_slots")
+        val KEY_GRID_LAYOUTS = stringPreferencesKey("grid_layouts") // Map<wallpaperUri, slots>
         const val APPS_PER_PAGE = 16
 
         val DEFAULT_DOCK = listOf(
@@ -73,19 +75,61 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /** In-memory cache of ALL wallpaper layouts */
+    private var allLayouts: MutableMap<String, List<String?>> = mutableMapOf()
+
     init {
         loadApps()
-        loadBackground()
+        loadBackgroundThenGrid()
         loadDockApps()
         loadEffects()
-        loadGridSlots()
     }
 
-    private fun loadBackground() {
+    /**
+     * Load background first, then load all grid layouts and apply the current wallpaper's layout.
+     * Order matters: we need to know which wallpaper is active before loading its grid.
+     */
+    private fun loadBackgroundThenGrid() {
         viewModelScope.launch {
             val saved = dataStore.data.map { it[KEY_BACKGROUND] }.first()
             if (saved != null) _backgroundUri.value = saved
+            loadAllLayouts()
+            applySavedSlotsForCurrentWallpaper()
         }
+    }
+
+    private suspend fun loadAllLayouts() {
+        val json = dataStore.data.map { it[KEY_GRID_LAYOUTS] }.first()
+        if (json != null) {
+            val type = object : TypeToken<Map<String, List<String?>>>() {}.type
+            allLayouts = gson.fromJson<Map<String, List<String?>>>(json, type).toMutableMap()
+            Log.d("PixoraGrid", "Loaded ${allLayouts.size} wallpaper layouts")
+        }
+    }
+
+    /** Apply the saved slots for the current wallpaper, or default to alphabetical */
+    private fun applySavedSlotsForCurrentWallpaper() {
+        val uri = _backgroundUri.value
+        val saved = allLayouts[uri]?.toMutableList()
+        // Clean empty leading/trailing pages from saved data
+        if (saved != null) {
+            while (saved.size > APPS_PER_PAGE && saved.subList(0, APPS_PER_PAGE).all { it == null }) {
+                repeat(APPS_PER_PAGE) { saved.removeAt(0) }
+            }
+            while (saved.size > APPS_PER_PAGE && saved.subList(saved.size - APPS_PER_PAGE, saved.size).all { it == null }) {
+                repeat(APPS_PER_PAGE) { saved.removeAt(saved.size - 1) }
+            }
+            // Save cleaned version back
+            if (saved != allLayouts[uri]) {
+                allLayouts[uri] = saved
+                viewModelScope.launch {
+                    dataStore.edit { it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts) }
+                }
+            }
+        }
+        savedSlots = saved ?: emptyList()
+        Log.d("PixoraGrid", "Applying layout for '$uri': ${if (saved != null) "${saved.filterNotNull().size} apps" else "default alphabetical"}")
+        refreshGrid()
     }
 
     fun loadApps() {
@@ -100,8 +144,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectRoom(roomId: String) {
         val uri = "asset:$roomId"
-        _backgroundUri.value = uri
-        viewModelScope.launch { dataStore.edit { it[KEY_BACKGROUND] = uri } }
+        switchWallpaper(uri)
     }
 
     fun setBackgroundFile(uriOrPath: String) {
@@ -109,23 +152,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             uriOrPath.startsWith("asset:") || uriOrPath.startsWith("file:") || uriOrPath.startsWith("pano:") -> uriOrPath
             else -> "file:$uriOrPath"
         }
+        switchWallpaper(uri)
+    }
+
+    /** Switch wallpaper and load its associated icon layout */
+    private fun switchWallpaper(uri: String) {
         _backgroundUri.value = uri
-        viewModelScope.launch { dataStore.edit { it[KEY_BACKGROUND] = uri } }
+        viewModelScope.launch {
+            dataStore.edit { it[KEY_BACKGROUND] = uri }
+            applySavedSlotsForCurrentWallpaper()
+        }
     }
 
     // ── Grid Slots ──────────────────────────────────────────
 
     private var savedSlots: List<String?> = emptyList()
-
-    private fun loadGridSlots() {
-        viewModelScope.launch {
-            val saved = dataStore.data.map { it[KEY_GRID_SLOTS] }.first()
-            if (saved != null) {
-                savedSlots = Gson().fromJson(saved, object : TypeToken<List<String?>>() {}.type)
-            }
-            refreshGrid()
-        }
-    }
 
     /** Build the grid from saved slots + installed apps, pad to full pages */
     private fun refreshGrid() {
@@ -148,7 +189,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val inSlots = slots.filterNotNull().toSet()
             val newApps = installed.filter { it !in inSlots }
             for (app in newApps) {
-                // Find first null slot
                 val emptyIdx = slots.indexOfFirst { it == null }
                 if (emptyIdx >= 0) {
                     slots[emptyIdx] = app
@@ -156,6 +196,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     slots.add(app)
                 }
             }
+        }
+
+        // Remove leading empty pages (cleanup from old prepends)
+        while (slots.size > APPS_PER_PAGE) {
+            val firstPage = slots.subList(0, APPS_PER_PAGE)
+            if (firstPage.all { it == null }) {
+                repeat(APPS_PER_PAGE) { slots.removeAt(0) }
+            } else break
+        }
+
+        // Remove trailing empty pages (keep at least 1 page)
+        while (slots.size > APPS_PER_PAGE) {
+            val lastPage = slots.subList(slots.size - APPS_PER_PAGE, slots.size)
+            if (lastPage.all { it == null }) {
+                repeat(APPS_PER_PAGE) { slots.removeAt(slots.size - 1) }
+            } else break
         }
 
         // Pad to full pages (multiple of APPS_PER_PAGE)
@@ -171,9 +227,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun saveGrid(slots: List<String?>) {
         _gridSlots.value = slots
         savedSlots = slots
+        // Save associated with current wallpaper
+        val uri = _backgroundUri.value
+        allLayouts[uri] = slots
         viewModelScope.launch {
-            dataStore.edit { it[KEY_GRID_SLOTS] = Gson().toJson(slots) }
+            dataStore.edit { it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts) }
         }
+        Log.d("PixoraGrid", "Saved layout for '$uri'")
     }
 
     /**
@@ -189,7 +249,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         Log.d("PixoraGrid", "moveApp: $fromGlobalIndex → $toGlobalIndex (${slots[fromGlobalIndex]} ↔ ${slots[toGlobalIndex]})")
 
-        // Swap (works for both empty and occupied targets)
         val temp = slots[fromGlobalIndex]
         slots[fromGlobalIndex] = slots[toGlobalIndex]
         slots[toGlobalIndex] = temp
@@ -206,21 +265,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val currentPage = fromGlobalIndex / APPS_PER_PAGE
         val nextPageStart = (currentPage + 1) * APPS_PER_PAGE
 
-        // Ensure next page exists
         while (slots.size < nextPageStart + APPS_PER_PAGE) slots.add(null)
 
-        // Find first empty slot on next page
         var targetIdx = -1
         for (i in nextPageStart until nextPageStart + APPS_PER_PAGE) {
             if (slots[i] == null) { targetIdx = i; break }
         }
-        if (targetIdx == -1) targetIdx = nextPageStart // Force first position if full
+        if (targetIdx == -1) targetIdx = nextPageStart
 
         Log.d("PixoraGrid", "moveToNextPage: $fromGlobalIndex → $targetIdx")
         slots[fromGlobalIndex] = null
         val displaced = slots[targetIdx]
         slots[targetIdx] = pkg
-        if (displaced != null) slots[fromGlobalIndex] = displaced // swap if occupied
+        if (displaced != null) slots[fromGlobalIndex] = displaced
 
         saveGrid(slots)
         return currentPage + 1
@@ -234,17 +291,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val currentPage = fromGlobalIndex / APPS_PER_PAGE
 
-        if (currentPage == 0) {
-            // Already on first grid page — prepend a new empty page
-            val newSlots = MutableList<String?>(APPS_PER_PAGE) { null }.apply { addAll(slots) }
-            val newFromIndex = fromGlobalIndex + APPS_PER_PAGE
-            newSlots[newFromIndex] = null
-            // Place on first slot of the new first page
-            newSlots[0] = pkg
-            Log.d("PixoraGrid", "moveToPrevPage: prepended new page, $fromGlobalIndex → 0")
-            saveGrid(newSlots)
-            return 0
-        }
+        if (currentPage == 0) return -1 // Already on first page, can't go further left
 
         val prevPageStart = (currentPage - 1) * APPS_PER_PAGE
 
@@ -264,11 +311,56 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return currentPage - 1
     }
 
-    /** Reset to alphabetical order */
+    /** Add an empty page after the given page index. Returns the new page index. */
+    fun addPageAfter(pageIndex: Int): Int {
+        val slots = _gridSlots.value.toMutableList()
+        val totalPages = slots.size / APPS_PER_PAGE
+        val safePage = pageIndex.coerceIn(0, totalPages - 1)
+        val insertAt = ((safePage + 1) * APPS_PER_PAGE).coerceAtMost(slots.size)
+        // Insert 16 null slots
+        for (i in 0 until APPS_PER_PAGE) {
+            slots.add(insertAt, null)
+        }
+        Log.d("PixoraGrid", "addPageAfter: inserted empty page after page $safePage (at index $insertAt)")
+        saveGrid(slots)
+        return safePage + 1
+    }
+
+    /**
+     * Remove a page if it's completely empty.
+     * Returns true if removed, false if page has icons.
+     */
+    fun removePage(pageIndex: Int): Boolean {
+        val slots = _gridSlots.value.toMutableList()
+        val pageStart = pageIndex * APPS_PER_PAGE
+        val pageEnd = pageStart + APPS_PER_PAGE
+        if (pageStart >= slots.size) return false
+
+        // Check if page has any apps
+        val pageSlots = slots.subList(pageStart, pageEnd.coerceAtMost(slots.size))
+        if (pageSlots.any { it != null }) {
+            Log.d("PixoraGrid", "removePage: page $pageIndex has apps, can't remove")
+            return false
+        }
+
+        // Don't remove the last page
+        val totalPages = slots.size / APPS_PER_PAGE
+        if (totalPages <= 1) return false
+
+        // Remove the 16 slots
+        repeat(APPS_PER_PAGE) { slots.removeAt(pageStart) }
+        Log.d("PixoraGrid", "removePage: removed empty page $pageIndex")
+        saveGrid(slots)
+        return true
+    }
+
+    /** Reset to alphabetical order (current wallpaper only) */
     fun resetAppOrder() {
         savedSlots = emptyList()
+        val uri = _backgroundUri.value
+        allLayouts.remove(uri)
         viewModelScope.launch {
-            dataStore.edit { it.remove(KEY_GRID_SLOTS) }
+            dataStore.edit { it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts) }
         }
         refreshGrid()
     }
@@ -282,7 +374,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val saved = dataStore.data.map { it[KEY_DOCK_APPS] }.first()
             if (saved != null) {
-                val list: List<String> = Gson().fromJson(saved, object : TypeToken<List<String>>() {}.type)
+                val list: List<String> = gson.fromJson(saved, object : TypeToken<List<String>>() {}.type)
                 _dockApps.value = list
             } else {
                 viewModelScope.launch(Dispatchers.IO) {
@@ -309,7 +401,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun saveDockApps(apps: List<String>) {
-        viewModelScope.launch { dataStore.edit { it[KEY_DOCK_APPS] = Gson().toJson(apps) } }
+        viewModelScope.launch { dataStore.edit { it[KEY_DOCK_APPS] = gson.toJson(apps) } }
     }
 
     fun addDockApp(packageName: String) {
