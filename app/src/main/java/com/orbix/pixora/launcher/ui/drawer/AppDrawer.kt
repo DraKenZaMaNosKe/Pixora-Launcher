@@ -9,10 +9,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,6 +36,9 @@ fun AppDrawer(
     apps: List<AppInfo>,
     onAppClick: (String) -> Unit,
     onDismiss: () -> Unit,
+    homeApps: Set<String> = emptySet(),
+    onAddToHome: (String) -> Unit = {},
+    onRemoveFromHome: (String) -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
@@ -111,11 +116,17 @@ fun AppDrawer(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 itemsIndexed(filteredApps, key = { _, app -> app.packageName }) { index, app ->
+                    val isOnHome = app.packageName in homeApps
                     FanAppGridItem(
                         app = app,
                         index = index,
                         isVisible = visible,
+                        isOnHome = isOnHome,
                         onClick = { onAppClick(app.packageName) },
+                        onToggleHome = {
+                            if (isOnHome) onRemoveFromHome(app.packageName)
+                            else onAddToHome(app.packageName)
+                        },
                     )
                 }
             }
@@ -128,9 +139,11 @@ private fun FanAppGridItem(
     app: AppInfo,
     index: Int,
     isVisible: Boolean,
+    isOnHome: Boolean,
     onClick: () -> Unit,
+    onToggleHome: () -> Unit,
 ) {
-    val delay = (index * 25).coerceAtMost(600) // stagger up to 600ms
+    val delay = (index * 25).coerceAtMost(600)
     val animProgress by animateFloatAsState(
         targetValue = if (isVisible) 1f else 0f,
         animationSpec = tween(
@@ -145,7 +158,6 @@ private fun FanAppGridItem(
         BitmapFactory.decodeByteArray(app.iconBytes, 0, app.iconBytes.size)
     }
 
-    // Fan effect: each item rotates in from a different angle based on column
     val col = index % 4
     val startRotation = when (col) {
         0 -> -35f
@@ -169,12 +181,33 @@ private fun FanAppGridItem(
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = app.label,
-                modifier = Modifier.size(52.dp),
-            )
+        Box {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = app.label,
+                    modifier = Modifier.size(52.dp),
+                )
+            }
+            // Add/remove badge
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .align(Alignment.TopEnd)
+                    .clip(CircleShape)
+                    .background(
+                        if (isOnHome) Color(0xFF4CAF50) else Color(0xFF7C4DFF).copy(alpha = 0.8f)
+                    )
+                    .clickable(onClick = onToggleHome),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (isOnHome) Icons.Default.Check else Icons.Default.Add,
+                    contentDescription = if (isOnHome) "Remove from home" else "Add to home",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(

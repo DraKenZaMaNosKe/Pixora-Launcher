@@ -26,7 +26,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @Composable
-fun PixoraLauncherApp() {
+fun PixoraLauncherApp(
+    onReconnectEqualizer: () -> Unit = {},
+    onSetDefaultLauncher: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val catalogViewModel: CatalogViewModel = viewModel()
@@ -84,8 +87,11 @@ fun PixoraLauncherApp() {
             SettingsScreen(
                 viewModel = homeViewModel,
                 onBack = { showSettings = false },
+                onReconnectEqualizer = onReconnectEqualizer,
+                onSetDefaultLauncher = onSetDefaultLauncher,
             )
         }
+
 
         AnimatedVisibility(
             visible = showCatalog && !showWallpaperPreview && !showStoryDetail && !showIconRoomPreview,

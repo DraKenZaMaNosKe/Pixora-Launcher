@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -59,6 +60,7 @@ fun DraggableAppGrid(
     onLongPress: () -> Unit,
     onMove: (fromIndex: Int, toIndex: Int) -> Unit,
     onAddToDock: (String) -> Unit,
+    onRemoveFromHome: (String) -> Unit,
     onDragToNextPage: (fromIndex: Int) -> Unit,
     onDragToPrevPage: (fromIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -82,6 +84,16 @@ fun DraggableAppGrid(
     var gridRight by remember { mutableFloatStateOf(0f) }
 
     var contextMenuIndex by remember { mutableIntStateOf(-1) }
+
+    // Track the last moved icon for highlight pulse
+    var lastMovedIndex by remember { mutableIntStateOf(-1) }
+    // Auto-clear after 1.5s
+    LaunchedEffect(lastMovedIndex) {
+        if (lastMovedIndex >= 0) {
+            kotlinx.coroutines.delay(1500)
+            lastMovedIndex = -1
+        }
+    }
 
     var nearRightEdge by remember { mutableFloatStateOf(0f) }
     var nearLeftEdge by remember { mutableFloatStateOf(0f) }
@@ -160,6 +172,18 @@ fun DraggableAppGrid(
         label = "arrow_slide"
     )
 
+    // Pulse animation for last-moved icon
+    val lastMovedPulse = remember { Animatable(0f) }
+    LaunchedEffect(lastMovedIndex) {
+        if (lastMovedIndex >= 0) {
+            lastMovedPulse.snapTo(1f)
+            lastMovedPulse.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(1500, easing = FastOutSlowInEasing),
+            )
+        }
+    }
+
     // Colors
     val accentColor = Color(0xFF7C4DFF)
     val emptySlotBorderColor = Color.White.copy(alpha = dashPulse)
@@ -236,24 +260,57 @@ fun DraggableAppGrid(
                                     } else Modifier
                                 )
                                 .graphicsLayer {
+                                    val isDragging = draggedIndex >= 0
+                                    val isLastMoved = index == lastMovedIndex && !isDragging
                                     if (isDragged) {
                                         translationX = dragOffset.x
                                         translationY = dragOffset.y
-                                        scaleX = 1.15f
-                                        scaleY = 1.15f
+                                        scaleX = 1.2f
+                                        scaleY = 1.2f
                                         shadowElevation = 16f
                                         val edgeProximity = maxOf(nearRightEdge, nearLeftEdge)
                                         alpha = 1f - (edgeProximity * 0.3f)
                                     } else if (isEditMode && app != null) {
                                         val wobbleDir = if (index % 2 == 0) wobbleAngle else -wobbleAngle
                                         rotationZ = wobbleDir
+                                        // Dim other icons while dragging
+                                        if (isDragging && !isHoverTarget) {
+                                            alpha = 0.45f
+                                        }
                                     }
                                     // Subtle scale-up on hover target
                                     if (isHoverTarget) {
                                         scaleX = 1.05f
                                         scaleY = 1.05f
                                     }
+                                    // Scale pulse on last-moved icon
+                                    if (isLastMoved) {
+                                        val pulseScale = 1f + lastMovedPulse.value * 0.1f
+                                        scaleX = pulseScale
+                                        scaleY = pulseScale
+                                    }
                                 }
+                                // Glow behind dragged icon or last-moved icon
+                                .then(
+                                    if (isDragged) {
+                                        Modifier.drawBehind {
+                                            drawRoundRect(
+                                                color = accentColor.copy(alpha = 0.5f),
+                                                cornerRadius = CornerRadius(16.dp.toPx()),
+                                            )
+                                        }
+                                    } else if (index == lastMovedIndex && draggedIndex < 0 && app != null) {
+                                        Modifier.drawBehind {
+                                            val pulse = lastMovedPulse.value
+                                            if (pulse > 0f) {
+                                                drawRoundRect(
+                                                    color = accentColor.copy(alpha = pulse * 0.45f),
+                                                    cornerRadius = CornerRadius(16.dp.toPx()),
+                                                )
+                                            }
+                                        }
+                                    } else Modifier
+                                )
                                 .then(
                                     if (isEditMode && app != null) {
                                         Modifier.pointerInput(index) {
@@ -279,10 +336,12 @@ fun DraggableAppGrid(
                                                         when {
                                                             centerX > gridRight - edgeZone -> {
                                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                lastMovedIndex = -1
                                                                 onDragToNextPage(draggedIndex)
                                                             }
                                                             centerX < gridLeft + edgeZone -> {
                                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                lastMovedIndex = -1
                                                                 onDragToPrevPage(draggedIndex)
                                                             }
                                                             else -> {
@@ -294,6 +353,9 @@ fun DraggableAppGrid(
                                                                 )
                                                                 if (target != -1 && target != draggedIndex) {
                                                                     onMove(draggedIndex, target)
+                                                                    lastMovedIndex = target
+                                                                } else {
+                                                                    lastMovedIndex = draggedIndex
                                                                 }
                                                             }
                                                         }
@@ -338,6 +400,14 @@ fun DraggableAppGrid(
                                         text = { Text("Add to Dock") },
                                         leadingIcon = { Icon(Icons.Default.Apps, contentDescription = null) },
                                         onClick = { onAddToDock(app.packageName); contextMenuIndex = -1 },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Remove from Home") },
+                                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                                        onClick = {
+                                            onRemoveFromHome(app.packageName)
+                                            contextMenuIndex = -1
+                                        },
                                     )
                                     DropdownMenuItem(
                                         text = { Text("App Info") },

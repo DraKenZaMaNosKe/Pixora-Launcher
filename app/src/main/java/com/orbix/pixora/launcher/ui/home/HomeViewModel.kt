@@ -51,6 +51,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isEditMode = MutableStateFlow(false)
     val isEditMode: StateFlow<Boolean> = _isEditMode
 
+    /** The page index that acts as "home" — launcher opens here */
+    private val _homePage = MutableStateFlow(0)
+    val homePage: StateFlow<Int> = _homePage
+
     private val _showTouchGlow = MutableStateFlow(true)
     val showTouchGlow: StateFlow<Boolean> = _showTouchGlow
     private val _showEqualizer = MutableStateFlow(true)
@@ -64,6 +68,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val KEY_BACKGROUND = stringPreferencesKey("home_background")
         val KEY_DOCK_APPS = stringPreferencesKey("dock_apps")
         val KEY_GRID_LAYOUTS = stringPreferencesKey("grid_layouts") // Map<wallpaperUri, slots>
+        val KEY_HOME_PAGES = stringPreferencesKey("home_pages") // Map<wallpaperUri, pageIndex>
         const val APPS_PER_PAGE = 16
 
         val DEFAULT_DOCK = listOf(
@@ -77,6 +82,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** In-memory cache of ALL wallpaper layouts */
     private var allLayouts: MutableMap<String, List<String?>> = mutableMapOf()
+
+    /** In-memory cache of home page per wallpaper */
+    private var allHomePages: MutableMap<String, Int> = mutableMapOf()
 
     init {
         loadApps()
@@ -105,6 +113,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             allLayouts = gson.fromJson<Map<String, List<String?>>>(json, type).toMutableMap()
             Log.d("PixoraGrid", "Loaded ${allLayouts.size} wallpaper layouts")
         }
+        val hpJson = dataStore.data.map { it[KEY_HOME_PAGES] }.first()
+        if (hpJson != null) {
+            val type = object : TypeToken<Map<String, Int>>() {}.type
+            allHomePages = gson.fromJson<Map<String, Int>>(hpJson, type).toMutableMap()
+        }
     }
 
     /** Apply the saved slots for the current wallpaper, or default to alphabetical */
@@ -128,7 +141,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         savedSlots = saved ?: emptyList()
-        Log.d("PixoraGrid", "Applying layout for '$uri': ${if (saved != null) "${saved.filterNotNull().size} apps" else "default alphabetical"}")
+        _homePage.value = allHomePages[uri] ?: 0
+        Log.d("PixoraGrid", "Applying layout for '$uri': ${if (saved != null) "${saved.filterNotNull().size} apps" else "default alphabetical"}, homePage=${_homePage.value}")
         refreshGrid()
     }
 
@@ -256,34 +270,38 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         saveGrid(slots)
     }
 
-    /** Move app to first empty slot on next page, return target page index */
+    /** Move app to first empty slot on next page (or further). Return target page index. */
     fun moveAppToNextPage(fromGlobalIndex: Int): Int {
         val slots = _gridSlots.value.toMutableList()
         if (fromGlobalIndex < 0 || fromGlobalIndex >= slots.size) return -1
         val pkg = slots[fromGlobalIndex] ?: return -1
 
         val currentPage = fromGlobalIndex / APPS_PER_PAGE
-        val nextPageStart = (currentPage + 1) * APPS_PER_PAGE
+        val searchStart = (currentPage + 1) * APPS_PER_PAGE
 
-        while (slots.size < nextPageStart + APPS_PER_PAGE) slots.add(null)
-
+        // Search all pages after current for the first empty slot
         var targetIdx = -1
-        for (i in nextPageStart until nextPageStart + APPS_PER_PAGE) {
+        for (i in searchStart until slots.size) {
             if (slots[i] == null) { targetIdx = i; break }
         }
-        if (targetIdx == -1) targetIdx = nextPageStart
 
-        Log.d("PixoraGrid", "moveToNextPage: $fromGlobalIndex → $targetIdx")
+        if (targetIdx == -1) {
+            // No empty slot found — create a new page at the end
+            val newPageStart = slots.size
+            repeat(APPS_PER_PAGE) { slots.add(null) }
+            targetIdx = newPageStart
+        }
+
+        val targetPage = targetIdx / APPS_PER_PAGE
+        Log.d("PixoraGrid", "moveToNextPage: $fromGlobalIndex → $targetIdx (page $targetPage)")
         slots[fromGlobalIndex] = null
-        val displaced = slots[targetIdx]
         slots[targetIdx] = pkg
-        if (displaced != null) slots[fromGlobalIndex] = displaced
 
         saveGrid(slots)
-        return currentPage + 1
+        return targetPage
     }
 
-    /** Move app to first empty slot on previous page, return target page index */
+    /** Move app to first empty slot on previous page (or further back). Return target page index. */
     fun moveAppToPrevPage(fromGlobalIndex: Int): Int {
         val slots = _gridSlots.value.toMutableList()
         if (fromGlobalIndex < 0 || fromGlobalIndex >= slots.size) return -1
@@ -291,24 +309,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val currentPage = fromGlobalIndex / APPS_PER_PAGE
 
-        if (currentPage == 0) return -1 // Already on first page, can't go further left
+        if (currentPage == 0) {
+            // Prepend a new page at the beginning
+            val newSlots = MutableList<String?>(APPS_PER_PAGE) { null }.apply { addAll(slots) }
+            val newFromIndex = fromGlobalIndex + APPS_PER_PAGE
+            newSlots[newFromIndex] = null
+            newSlots[0] = pkg
+            Log.d("PixoraGrid", "moveToPrevPage: prepended new page, $fromGlobalIndex → 0")
+            saveGrid(newSlots)
+            return 0
+        }
 
-        val prevPageStart = (currentPage - 1) * APPS_PER_PAGE
-
+        // Search backwards from end of previous page to slot 0 for first empty slot
+        val prevPageEnd = currentPage * APPS_PER_PAGE - 1
         var targetIdx = -1
-        for (i in prevPageStart until prevPageStart + APPS_PER_PAGE) {
+        for (i in prevPageEnd downTo 0) {
             if (slots[i] == null) { targetIdx = i; break }
         }
-        if (targetIdx == -1) targetIdx = prevPageStart
 
-        Log.d("PixoraGrid", "moveToPrevPage: $fromGlobalIndex → $targetIdx")
+        if (targetIdx == -1) {
+            // All previous pages are full — prepend a new page
+            val newSlots = MutableList<String?>(APPS_PER_PAGE) { null }.apply { addAll(slots) }
+            val newFromIndex = fromGlobalIndex + APPS_PER_PAGE
+            newSlots[newFromIndex] = null
+            newSlots[0] = pkg
+            Log.d("PixoraGrid", "moveToPrevPage: all prev pages full, prepended new page, $fromGlobalIndex → 0")
+            saveGrid(newSlots)
+            return 0
+        }
+
+        val targetPage = targetIdx / APPS_PER_PAGE
+        Log.d("PixoraGrid", "moveToPrevPage: $fromGlobalIndex → $targetIdx (page $targetPage)")
         slots[fromGlobalIndex] = null
-        val displaced = slots[targetIdx]
         slots[targetIdx] = pkg
-        if (displaced != null) slots[fromGlobalIndex] = displaced
 
         saveGrid(slots)
-        return currentPage - 1
+        return targetPage
     }
 
     /** Add an empty page after the given page index. Returns the new page index. */
@@ -354,6 +390,49 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
+    /** Clear all icons from the home screen (current wallpaper) */
+    fun clearAllPages() {
+        savedSlots = List(APPS_PER_PAGE) { null }
+        saveGrid(savedSlots)
+        Log.d("PixoraGrid", "clearAllPages: cleared all icons")
+    }
+
+    /** Remove a specific app from the home grid */
+    fun removeAppFromHome(packageName: String) {
+        val slots = _gridSlots.value.toMutableList()
+        val index = slots.indexOf(packageName)
+        if (index >= 0) {
+            slots[index] = null
+            Log.d("PixoraGrid", "removeAppFromHome: removed $packageName from slot $index")
+            saveGrid(slots)
+        }
+    }
+
+    /** Add an app to the first available empty slot. Returns true if added. */
+    fun addAppToHome(packageName: String): Boolean {
+        val slots = _gridSlots.value.toMutableList()
+        // Check if already on home
+        if (packageName in slots) return false
+
+        val emptyIdx = slots.indexOfFirst { it == null }
+        if (emptyIdx >= 0) {
+            slots[emptyIdx] = packageName
+        } else {
+            // No empty slot — add to end (new page will be created)
+            slots.add(packageName)
+            // Pad to full page
+            while (slots.size % APPS_PER_PAGE != 0) slots.add(null)
+        }
+        Log.d("PixoraGrid", "addAppToHome: added $packageName")
+        saveGrid(slots)
+        return true
+    }
+
+    /** Check if an app is currently on the home screen */
+    fun isAppOnHome(packageName: String): Boolean {
+        return packageName in _gridSlots.value
+    }
+
     /** Reset to alphabetical order (current wallpaper only) */
     fun resetAppOrder() {
         savedSlots = emptyList()
@@ -367,6 +446,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun enterEditMode() { _isEditMode.value = true }
     fun exitEditMode() { _isEditMode.value = false }
+
+    /** Set a page as the home page (launcher opens here) */
+    fun setHomePage(pageIndex: Int) {
+        _homePage.value = pageIndex
+        val uri = _backgroundUri.value
+        allHomePages[uri] = pageIndex
+        viewModelScope.launch {
+            dataStore.edit { it[KEY_HOME_PAGES] = gson.toJson(allHomePages) }
+        }
+        Log.d("PixoraGrid", "Set home page to $pageIndex for '$uri'")
+    }
 
     // ── Dock ──────────────────────────────────────────
 

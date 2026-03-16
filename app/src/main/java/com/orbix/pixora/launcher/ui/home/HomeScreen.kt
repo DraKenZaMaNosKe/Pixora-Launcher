@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -16,15 +17,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +79,7 @@ fun HomeScreen(
     val showSystemRings by viewModel.showSystemRings.collectAsState()
     val isEditMode by viewModel.isEditMode.collectAsState()
     val gridSlots by viewModel.gridSlots.collectAsState()
+    val homePage by viewModel.homePage.collectAsState()
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -90,10 +97,17 @@ fun HomeScreen(
         if (gridSlots.isEmpty()) emptyList()
         else gridSlots.chunked(APPS_PER_PAGE)
     }
-    // Page 0 = clean home (clock only), then app pages, then 1 extra empty page
+    // All pages are app pages, plus 1 extra empty page at the end
     val extraEmptyPages = 1
-    val pageCount = 1 + appPages.size + extraEmptyPages
+    val pageCount = appPages.size + extraEmptyPages
     val pagerState = rememberPagerState(pageCount = { pageCount })
+
+    // Scroll to home page on first load
+    LaunchedEffect(homePage, appPages.size) {
+        if (homePage in 0 until pageCount && pagerState.currentPage == 0 && homePage > 0) {
+            pagerState.scrollToPage(homePage)
+        }
+    }
 
     var screenSize by remember { mutableStateOf(IntSize.Zero) }
 
@@ -141,6 +155,11 @@ fun HomeScreen(
                     if (dragAmount < -50) viewModel.openDrawer()
                 }
             }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = { viewModel.enterEditMode() }
+                )
+            }
     ) {
         val context = LocalContext.current
 
@@ -166,10 +185,9 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
             userScrollEnabled = !isEditMode,
         ) { page ->
-            val appPageIndex = page - 1
-            if (appPageIndex in appPages.indices) {
-                val pageSlots = appPages[appPageIndex]
-                val pageOffset = appPageIndex * APPS_PER_PAGE
+            if (page in appPages.indices) {
+                val pageSlots = appPages[page]
+                val pageOffset = page * APPS_PER_PAGE
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -187,19 +205,27 @@ fun HomeScreen(
                             viewModel.moveApp(pageOffset + from, pageOffset + to)
                         },
                         onAddToDock = { pkg -> viewModel.addDockApp(pkg) },
+                        onRemoveFromHome = { pkg -> viewModel.removeAppFromHome(pkg) },
                         onDragToNextPage = { fromLocal ->
                             val targetPage = viewModel.moveAppToNextPage(pageOffset + fromLocal)
                             if (targetPage >= 0) {
                                 scope.launch {
-                                    pagerState.animateScrollToPage(targetPage + 1) // +1 for clock page
+                                    pagerState.animateScrollToPage(targetPage)
                                 }
                             }
                         },
                         onDragToPrevPage = { fromLocal ->
+                            val wasPagerPage = pagerState.currentPage
                             val targetPage = viewModel.moveAppToPrevPage(pageOffset + fromLocal)
-                            if (targetPage >= 0) {
+                            if (targetPage == 0 && wasPagerPage == 0) {
+                                // Prepended new page: snap to shifted old page, then animate left
                                 scope.launch {
-                                    pagerState.animateScrollToPage(targetPage + 1) // +1 for clock page
+                                    pagerState.scrollToPage(1)
+                                    pagerState.animateScrollToPage(0)
+                                }
+                            } else if (targetPage >= 0) {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(targetPage)
                                 }
                             }
                         },
@@ -212,6 +238,7 @@ fun HomeScreen(
         }
 
         // Edit mode toolbar
+        var showClearDialog by remember { mutableStateOf(false) }
         if (isEditMode) {
             Row(
                 modifier = Modifier
@@ -221,6 +248,31 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Clear all button
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.Red.copy(alpha = 0.5f))
+                        .clickable { showClearDialog = true }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        Icons.Default.DeleteSweep,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = "Clear",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.7f),
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
                 // Auto-reorganize button
                 Row(
                     modifier = Modifier
@@ -244,7 +296,38 @@ fun HomeScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Set as Home button
+                val isCurrentHome = pagerState.currentPage == homePage
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            if (isCurrentHome) Color(0xFF7C4DFF).copy(alpha = 0.7f)
+                            else Color.Black.copy(alpha = 0.6f)
+                        )
+                        .clickable {
+                            viewModel.setHomePage(pagerState.currentPage)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Home,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = if (isCurrentHome) "Home" else "Set Home",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.7f),
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 // Done button
                 Text(
@@ -260,45 +343,73 @@ fun HomeScreen(
             }
         }
 
-        // Clock overlay
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 48.dp)
-                .statusBarsPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(text = currentTime, fontSize = 56.sp, fontWeight = FontWeight.Light, color = Color.White)
-            Text(text = currentDate, fontSize = 16.sp, color = Color.White.copy(alpha = 0.7f))
+        // Clear all confirmation dialog
+        if (showClearDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearDialog = false },
+                title = { Text("Clear All Pages") },
+                text = { Text("Remove all icons from the home screen? You can add them back from the app drawer.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.clearAllPages()
+                            showClearDialog = false
+                            scope.launch { pagerState.animateScrollToPage(0) }
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color.Red),
+                    ) { Text("Clear All") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
+                },
+                containerColor = Color(0xFF1A1A2E),
+                titleContentColor = Color.White,
+                textContentColor = Color.White.copy(alpha = 0.7f),
+            )
         }
 
-        if (showBatteryRing) {
-            BatteryRingOverlay(glowColor = glowColor, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 48.dp, end = 12.dp))
-        }
-        if (showSystemRings) {
-            SystemRingsOverlay(glowColor = glowColor, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 155.dp, end = 8.dp))
-        }
-        if (showEqualizer) {
-            EqualizerOverlay(glowColor = glowColor, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp).navigationBarsPadding().padding(horizontal = 24.dp))
-        }
+        // Hide overlays & buttons in edit mode for a clean editing experience
+        if (!isEditMode) {
+            // Clock overlay
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 48.dp)
+                    .statusBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(text = currentTime, fontSize = 56.sp, fontWeight = FontWeight.Light, color = Color.White)
+                Text(text = currentDate, fontSize = 16.sp, color = Color.White.copy(alpha = 0.7f))
+            }
 
-        // Catalog + Settings buttons
-        Column(
-            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 52.dp, start = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Box(
-                modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f)).clickable { onOpenCatalog() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Default.Palette, contentDescription = "Explore wallpapers", tint = Color.White, modifier = Modifier.size(24.dp)) }
-            Box(
-                modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f)).clickable { onOpenSettings() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(24.dp)) }
-            Box(
-                modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFF7C4DFF).copy(alpha = 0.5f)).clickable { viewModel.openDrawer() },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Default.Apps, contentDescription = "All apps", tint = Color.White, modifier = Modifier.size(24.dp)) }
+            if (showBatteryRing) {
+                BatteryRingOverlay(glowColor = glowColor, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 48.dp, end = 12.dp))
+            }
+            if (showSystemRings) {
+                SystemRingsOverlay(glowColor = glowColor, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 155.dp, end = 8.dp))
+            }
+            if (showEqualizer) {
+                EqualizerOverlay(glowColor = glowColor, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp).navigationBarsPadding().padding(horizontal = 24.dp))
+            }
+
+            // Catalog + Settings buttons
+            Column(
+                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 52.dp, start = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f)).clickable { onOpenCatalog() },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.Palette, contentDescription = "Explore wallpapers", tint = Color.White, modifier = Modifier.size(24.dp)) }
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f)).clickable { onOpenSettings() },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(24.dp)) }
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFF7C4DFF).copy(alpha = 0.5f)).clickable { viewModel.openDrawer() },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.Apps, contentDescription = "All apps", tint = Color.White, modifier = Modifier.size(24.dp)) }
+            }
         }
 
         // Dock bar
@@ -318,15 +429,13 @@ fun HomeScreen(
                         .clip(CircleShape)
                         .background(Color.Red.copy(alpha = 0.5f))
                         .clickable {
-                            val appPageIndex = pagerState.currentPage - 1 // -1 for clock page
-                            if (appPageIndex >= 0) {
-                                val removed = viewModel.removePage(appPageIndex)
-                                if (removed) {
-                                    val newPage = (pagerState.currentPage - 1).coerceAtLeast(1)
-                                    scope.launch { pagerState.animateScrollToPage(newPage) }
-                                } else {
-                                    scope.launch { snackbarHostState.showSnackbar("Move icons first to delete this page") }
-                                }
+                            val appPageIndex = pagerState.currentPage
+                            val removed = viewModel.removePage(appPageIndex)
+                            if (removed) {
+                                val newPage = (appPageIndex - 1).coerceAtLeast(0)
+                                scope.launch { pagerState.animateScrollToPage(newPage) }
+                            } else {
+                                scope.launch { snackbarHostState.showSnackbar("Move icons first to delete this page") }
                             }
                         },
                     contentAlignment = Alignment.Center,
@@ -335,7 +444,7 @@ fun HomeScreen(
                 }
                 Spacer(modifier = Modifier.width(10.dp))
 
-                PageIndicator(pageCount = pageCount, currentPage = pagerState.currentPage)
+                PageIndicator(pageCount = pageCount, currentPage = pagerState.currentPage, homePage = homePage)
 
                 Spacer(modifier = Modifier.width(10.dp))
                 // Add page button
@@ -345,9 +454,8 @@ fun HomeScreen(
                         .clip(CircleShape)
                         .background(Color(0xFF7C4DFF).copy(alpha = 0.6f))
                         .clickable {
-                            val appPageIndex = pagerState.currentPage - 1 // -1 for clock page
-                            val newPage = viewModel.addPageAfter(appPageIndex.coerceAtLeast(0))
-                            scope.launch { pagerState.animateScrollToPage(newPage + 1) } // +1 for clock page
+                            val newPage = viewModel.addPageAfter(pagerState.currentPage)
+                            scope.launch { pagerState.animateScrollToPage(newPage) }
                         },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -385,10 +493,14 @@ fun HomeScreen(
 
         // App drawer overlay
         if (isDrawerOpen) {
+            val homeAppSet = remember(gridSlots) { gridSlots.filterNotNull().toSet() }
             AppDrawer(
                 apps = apps,
                 onAppClick = { packageName -> viewModel.closeDrawer(); viewModel.launchApp(packageName) },
                 onDismiss = { viewModel.closeDrawer() },
+                homeApps = homeAppSet,
+                onAddToHome = { pkg -> viewModel.addAppToHome(pkg) },
+                onRemoveFromHome = { pkg -> viewModel.removeAppFromHome(pkg) },
             )
         }
     }

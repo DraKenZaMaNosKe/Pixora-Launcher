@@ -2,6 +2,8 @@ package com.orbix.pixora.launcher
 
 import android.Manifest
 import android.app.Activity
+import android.app.role.RoleManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -9,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -45,7 +48,15 @@ class LauncherActivity : ComponentActivity() {
     ) { granted ->
         Log.d(TAG, "RECORD_AUDIO result: granted=$granted")
         if (granted) {
-            requestMediaProjectionDelayed()
+            requestMediaProjection()
+        }
+    }
+
+    private val defaultLauncherLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            Toast.makeText(this, "Pixora is now your default launcher!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -59,7 +70,10 @@ class LauncherActivity : ComponentActivity() {
         setContent {
             PixoraTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    PixoraLauncherApp()
+                    PixoraLauncherApp(
+                        onReconnectEqualizer = { reconnectEqualizer() },
+                        onSetDefaultLauncher = { setAsDefaultLauncher() },
+                    )
                 }
             }
         }
@@ -80,11 +94,11 @@ class LauncherActivity : ComponentActivity() {
             Log.d(TAG, "Requesting RECORD_AUDIO")
             recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
         } else {
-            requestMediaProjectionDelayed()
+            requestMediaProjection()
         }
     }
 
-    private fun requestMediaProjectionDelayed() {
+    private fun requestMediaProjection() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             Log.w(TAG, "AudioPlaybackCapture requires API 29+")
             return
@@ -100,6 +114,50 @@ class LauncherActivity : ComponentActivity() {
             mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
         } catch (e: Exception) {
             Log.e(TAG, "Failed to request MediaProjection: ${e.message}")
+        }
+    }
+
+    /**
+     * Stop the current audio capture and re-request MediaProjection.
+     * This fixes the case where the equalizer stops detecting music.
+     */
+    private fun reconnectEqualizer() {
+        Log.d(TAG, "Reconnecting equalizer...")
+        AudioCaptureService.stop(applicationContext)
+        // Small delay to let the service fully stop before re-requesting
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            } else {
+                requestMediaProjection()
+            }
+        }, 500)
+    }
+
+    /**
+     * Prompt user to set Pixora as the default launcher.
+     */
+    private fun setAsDefaultLauncher() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+ — use RoleManager
+            val roleManager = getSystemService(RoleManager::class.java)
+            if (roleManager != null && !roleManager.isRoleHeld(RoleManager.ROLE_HOME)) {
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                defaultLauncherLauncher.launch(intent)
+            } else if (roleManager != null && roleManager.isRoleHeld(RoleManager.ROLE_HOME)) {
+                Toast.makeText(this, "Pixora is already your default launcher!", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            // Android 9 and below — open home app settings
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_HOME_SETTINGS)
+                startActivity(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to open home settings: ${e.message}")
+                Toast.makeText(this, "Open Settings > Apps > Default apps > Home app", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
