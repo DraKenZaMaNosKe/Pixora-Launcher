@@ -195,33 +195,34 @@ private fun CatalogTabBar(
     onTabSelected: (Int) -> Unit,
 ) {
     val uiTheme by ThemeManager.current.collectAsState()
-    Row(
+    LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        tabs.forEachIndexed { index, title ->
+        items(tabs) { title ->
+            val index = tabs.indexOf(title)
             val isSelected = index == selectedTab
             val bgColor by animateColorAsState(
-                targetValue = if (isSelected) uiTheme.primary else Color.Transparent,
+                targetValue = if (isSelected) uiTheme.primary else uiTheme.surfaceVariant,
                 animationSpec = tween(200),
                 label = "tab_bg"
             )
             Box(
                 modifier = Modifier
-                    .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(bgColor)
                     .clickable { onTabSelected(index) }
-                    .padding(vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = title,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (isSelected) uiTheme.onSurface else uiTheme.onBackground.copy(alpha = 0.5f),
+                    maxLines = 1,
                 )
             }
         }
@@ -277,8 +278,9 @@ private fun WallpapersTab(
 
 @Composable
 private fun CategoryChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
+    val uiTheme by ThemeManager.current.collectAsState()
     val bgColor by animateColorAsState(
-        targetValue = if (isSelected) Color(0xFF7C4DFF) else Color(0xFF1A1A2E),
+        targetValue = if (isSelected) uiTheme.primary else uiTheme.surfaceVariant,
         animationSpec = tween(200),
         label = "chip_bg"
     )
@@ -565,6 +567,7 @@ private fun DayCycleTab(
     themes: List<com.orbix.pixora.launcher.service.DayCycleTheme>,
     downloadService: com.orbix.pixora.launcher.service.DownloadService,
 ) {
+    val uiTheme by ThemeManager.current.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val activeTheme by com.orbix.pixora.launcher.service.DayCycleManager.activeTheme.collectAsState()
@@ -592,7 +595,7 @@ private fun DayCycleTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF141420))
+                        .background(uiTheme.surface)
                 ) {
                     // Preview image
                     Box(
@@ -618,7 +621,7 @@ private fun DayCycleTab(
                                 .align(Alignment.BottomCenter)
                                 .background(
                                     Brush.verticalGradient(
-                                        listOf(Color.Transparent, Color(0xFF141420))
+                                        listOf(Color.Transparent, uiTheme.surface)
                                     )
                                 )
                         )
@@ -725,11 +728,12 @@ private fun DayCycleTab(
 
 @Composable
 private fun LoadingContent() {
+    val uiTheme by ThemeManager.current.collectAsState()
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        CircularProgressIndicator(color = Color(0xFF7C4DFF))
+        CircularProgressIndicator(color = uiTheme.primary)
     }
 }
 

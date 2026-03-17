@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.orbix.pixora.launcher.data.models.AppInfo
+import com.orbix.pixora.launcher.ui.theme.ThemeManager
 
 @Composable
 fun AppDrawer(
@@ -43,6 +44,7 @@ fun AppDrawer(
     onRemoveFromHome: (String) -> Unit = {},
     recentApps: List<String> = emptyList(),
 ) {
+    val uiTheme by ThemeManager.current.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
 
     val filteredApps = if (searchQuery.isBlank()) apps
@@ -65,7 +67,7 @@ fun AppDrawer(
                 Brush.verticalGradient(
                     colors = listOf(
                         Color.Black.copy(alpha = 0.3f),
-                        Color(0xFF0A0A0F).copy(alpha = 0.95f),
+                        uiTheme.background.copy(alpha = 0.95f),
                     )
                 )
             )
@@ -80,7 +82,7 @@ fun AppDrawer(
                     translationY = panelOffset * 800f
                 }
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(Color(0xFF141420))
+                .background(uiTheme.surface)
                 .clickable(enabled = false) {}
                 .padding(top = 12.dp),
         ) {
@@ -90,7 +92,7 @@ fun AppDrawer(
                     .width(40.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color.White.copy(alpha = 0.3f))
+                    .background(uiTheme.onSurface.copy(alpha = 0.3f))
                     .align(Alignment.CenterHorizontally),
             )
 
@@ -120,7 +122,7 @@ fun AppDrawer(
                     Text(
                         text = "Recent",
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.4f),
+                        color = uiTheme.onSurface.copy(alpha = 0.4f),
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                     )
                     LazyRow(
@@ -150,7 +152,7 @@ fun AppDrawer(
                                 Text(
                                     text = app.label,
                                     fontSize = 10.sp,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = uiTheme.onSurface.copy(alpha = 0.6f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.widthIn(max = 56.dp),
@@ -163,7 +165,7 @@ fun AppDrawer(
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 20.dp),
                         thickness = 0.5.dp,
-                        color = Color.White.copy(alpha = 0.06f),
+                        color = uiTheme.onSurface.copy(alpha = 0.06f),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -204,6 +206,7 @@ private fun FanAppGridItem(
     onClick: () -> Unit,
     onToggleHome: () -> Unit,
 ) {
+    val uiTheme by ThemeManager.current.collectAsState()
     val delay = (index * 25).coerceAtMost(600)
     val animProgress by animateFloatAsState(
         targetValue = if (isVisible) 1f else 0f,
@@ -257,7 +260,7 @@ private fun FanAppGridItem(
                     .align(Alignment.TopEnd)
                     .clip(CircleShape)
                     .background(
-                        if (isOnHome) Color(0xFF4CAF50) else Color(0xFF7C4DFF).copy(alpha = 0.8f)
+                        if (isOnHome) Color(0xFF4CAF50) else uiTheme.primary.copy(alpha = 0.8f)
                     )
                     .clickable(onClick = onToggleHome),
                 contentAlignment = Alignment.Center,
@@ -274,7 +277,7 @@ private fun FanAppGridItem(
         Text(
             text = app.label,
             fontSize = 11.sp,
-            color = Color.White.copy(alpha = 0.8f),
+            color = uiTheme.onSurface.copy(alpha = 0.8f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
