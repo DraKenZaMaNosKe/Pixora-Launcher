@@ -41,26 +41,26 @@ class DownloadService(private val context: Context) {
                 val url = SupabaseConfig.imageUrl(filename)
                 Log.d("PixoraDownload", "Downloading: $url")
                 val request = Request.Builder().url(url).build()
-                val response = client.newCall(request).execute()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e("PixoraDownload", "HTTP ${response.code}: ${response.message}")
+                        return@withContext null
+                    }
 
-                if (!response.isSuccessful) {
-                    Log.e("PixoraDownload", "HTTP ${response.code}: ${response.message}")
-                    return@withContext null
-                }
+                    val body = response.body ?: return@withContext null
+                    val totalBytes = body.contentLength()
+                    var downloadedBytes = 0L
 
-                val body = response.body ?: return@withContext null
-                val totalBytes = body.contentLength()
-                var downloadedBytes = 0L
-
-                body.byteStream().use { input ->
-                    localFile.outputStream().use { output ->
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Int
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                            downloadedBytes += bytesRead
-                            if (totalBytes > 0) {
-                                onProgress?.invoke(downloadedBytes.toFloat() / totalBytes)
+                    body.byteStream().use { input ->
+                        localFile.outputStream().use { output ->
+                            val buffer = ByteArray(8192)
+                            var bytesRead: Int
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                                downloadedBytes += bytesRead
+                                if (totalBytes > 0) {
+                                    onProgress?.invoke(downloadedBytes.toFloat() / totalBytes)
+                                }
                             }
                         }
                     }

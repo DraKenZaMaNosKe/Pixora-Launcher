@@ -517,9 +517,10 @@ fun HomeScreen(
                         enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(800)),
                         exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(1200)),
                     ) {
-                        val storyGlow = try {
-                            Color(android.graphics.Color.parseColor(activeStory!!.glowColor))
-                        } catch (_: Exception) { Color(0xFF7C4DFF) }
+                        val storyGlow = activeStory?.let { story ->
+                            try { Color(android.graphics.Color.parseColor(story.glowColor)) }
+                            catch (_: Exception) { Color(0xFF7C4DFF) }
+                        } ?: Color(0xFF7C4DFF)
 
                         Box(
                             modifier = Modifier

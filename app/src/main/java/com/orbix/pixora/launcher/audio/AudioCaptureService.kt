@@ -167,6 +167,8 @@ class AudioCaptureService : Service() {
 
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
                 Log.e(TAG, "AudioRecord failed to initialize")
+                audioRecord?.release()
+                audioRecord = null
                 stopSelf()
                 return
             }

@@ -14,6 +14,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
@@ -75,6 +76,12 @@ class LauncherActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "onCreate savedInstanceState=${savedInstanceState != null}")
         enableEdgeToEdge()
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // Do nothing — we are the home screen
+            }
+        })
 
         AudioSessionTracker.register(applicationContext)
 
@@ -197,8 +204,4 @@ class LauncherActivity : ComponentActivity() {
         AudioCaptureService.stop(applicationContext)
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        // Do nothing — we are the home screen
-    }
 }
