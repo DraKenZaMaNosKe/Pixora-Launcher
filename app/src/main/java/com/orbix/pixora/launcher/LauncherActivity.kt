@@ -20,9 +20,25 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import com.orbix.pixora.launcher.audio.AudioCaptureService
 import com.orbix.pixora.launcher.audio.AudioSessionTracker
@@ -43,6 +59,10 @@ class LauncherActivity : ComponentActivity() {
         /** Emits a timestamp whenever the system home button is pressed */
         private val _homeButtonPressed = MutableStateFlow(0L)
         val homeButtonPressed: StateFlow<Long> = _homeButtonPressed
+
+        /** Show the equalizer explanation dialog before MediaProjection */
+        val showEqExplanation = mutableStateOf(false)
+        var onEqExplanationAccepted: (() -> Unit)? = null
     }
 
     private val mediaProjectionLauncher = registerForActivityResult(
@@ -103,6 +123,77 @@ class LauncherActivity : ComponentActivity() {
                         onSetDefaultLauncher = { setAsDefaultLauncher() },
                     )
                 }
+
+                // Equalizer explanation dialog
+                if (showEqExplanation.value) {
+                    Dialog(onDismissRequest = { showEqExplanation.value = false }) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF1A1A2E), Color(0xFF141420))
+                                    )
+                                )
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = "\uD83C\uDFB5",
+                                fontSize = 48.sp,
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Equalizer Setup",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Pixora needs access to the system audio so the equalizer can react to your music in real-time.\n\nOn the next screen, tap \"Siguiente\" (Next) to enable it.",
+                                fontSize = 14.sp,
+                                color = Color.White.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center,
+                                lineHeight = 20.sp,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "This does NOT record or share your screen.",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF4CAF50),
+                                textAlign = TextAlign.Center,
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Button(
+                                onClick = { onEqExplanationAccepted?.invoke() },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF7C4DFF)
+                                ),
+                            ) {
+                                Text(
+                                    "Connect Equalizer",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = { showEqExplanation.value = false },
+                            ) {
+                                Text(
+                                    "Skip for now",
+                                    color = Color.White.copy(alpha = 0.4f),
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -138,12 +229,17 @@ class LauncherActivity : ComponentActivity() {
             return
         }
 
-        Log.d(TAG, "Requesting MediaProjection permission...")
-        try {
-            val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to request MediaProjection: ${e.message}")
+        // Show explanation dialog before the system dialog
+        showEqExplanation.value = true
+        onEqExplanationAccepted = {
+            showEqExplanation.value = false
+            Log.d(TAG, "Requesting MediaProjection permission...")
+            try {
+                val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to request MediaProjection: ${e.message}")
+            }
         }
     }
 
