@@ -33,6 +33,7 @@ import com.orbix.pixora.launcher.data.models.IconRoom
 import com.orbix.pixora.launcher.data.models.Story
 import com.orbix.pixora.launcher.data.models.Wallpaper
 import com.orbix.pixora.launcher.data.remote.SupabaseConfig
+import kotlinx.coroutines.launch
 
 @Composable
 fun CatalogScreen(
@@ -119,6 +120,28 @@ fun CatalogScreen(
                     }
                 }
             }
+        }
+
+        // Catalog tutorial (first time)
+        val catalogContext = LocalContext.current
+        var showCatalogTour by remember { mutableStateOf(false) }
+        val catalogScope = rememberCoroutineScope()
+        LaunchedEffect(Unit) {
+            if (!com.orbix.pixora.launcher.ui.tutorial.TutorialManager.isCatalogTourDone(catalogContext)) {
+                kotlinx.coroutines.delay(800)
+                showCatalogTour = true
+            }
+        }
+        if (showCatalogTour) {
+            com.orbix.pixora.launcher.ui.tutorial.CoachMarkOverlay(
+                steps = com.orbix.pixora.launcher.ui.tutorial.TutorialSteps.catalogTour,
+                onComplete = {
+                    showCatalogTour = false
+                    catalogScope.launch {
+                        com.orbix.pixora.launcher.ui.tutorial.TutorialManager.markCatalogTourDone(catalogContext)
+                    }
+                },
+            )
         }
 
         // Snackbar at the bottom

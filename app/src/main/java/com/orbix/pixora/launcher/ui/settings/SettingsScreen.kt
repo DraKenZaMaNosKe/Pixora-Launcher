@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -242,6 +243,21 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // Info section
+            SettingsActionButton(
+                icon = Icons.Default.Replay,
+                title = "Replay Tutorials",
+                subtitle = "Show the guided tour again on each screen",
+                accentColor = Color(0xFFFFAB40),
+                onClick = {
+                    scope.launch {
+                        com.orbix.pixora.launcher.ui.tutorial.TutorialManager.resetAll(context)
+                        snackbarHostState.showSnackbar("Tutorials will show again next time")
+                    }
+                },
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             SectionHeader("About")
 
             Box(
@@ -275,6 +291,26 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(80.dp))
+        }
+
+        // Settings tutorial (first time)
+        var showSettingsTour by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            if (!com.orbix.pixora.launcher.ui.tutorial.TutorialManager.isSettingsTourDone(context)) {
+                kotlinx.coroutines.delay(600)
+                showSettingsTour = true
+            }
+        }
+        if (showSettingsTour) {
+            com.orbix.pixora.launcher.ui.tutorial.CoachMarkOverlay(
+                steps = com.orbix.pixora.launcher.ui.tutorial.TutorialSteps.settingsTour,
+                onComplete = {
+                    showSettingsTour = false
+                    scope.launch {
+                        com.orbix.pixora.launcher.ui.tutorial.TutorialManager.markSettingsTourDone(context)
+                    }
+                },
+            )
         }
 
         // Snackbar

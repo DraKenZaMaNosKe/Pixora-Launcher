@@ -78,6 +78,9 @@ import coil.request.ImageRequest
 import coil.size.Size as CoilSize
 import com.orbix.pixora.launcher.LauncherActivity
 import com.orbix.pixora.launcher.audio.SoundEngine
+import com.orbix.pixora.launcher.ui.tutorial.CoachMarkOverlay
+import com.orbix.pixora.launcher.ui.tutorial.TutorialManager
+import com.orbix.pixora.launcher.ui.tutorial.TutorialSteps
 import com.orbix.pixora.launcher.data.models.AppInfo
 import com.orbix.pixora.launcher.data.models.IconRoom
 import com.orbix.pixora.launcher.service.IconRoomRepository
@@ -800,6 +803,43 @@ fun HomeScreen(
                 snackbarData = data,
                 containerColor = Color(0xFF1A1A2E),
                 contentColor = Color.White,
+            )
+        }
+
+        // ── Tutorials ──
+        // Home tour (first time only)
+        var showHomeTour by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            if (!TutorialManager.isHomeTourDone(context)) {
+                kotlinx.coroutines.delay(1500) // Let the home screen render first
+                showHomeTour = true
+            }
+        }
+        if (showHomeTour && !isEditMode && !isDrawerOpen) {
+            CoachMarkOverlay(
+                steps = TutorialSteps.homeTour,
+                onComplete = {
+                    showHomeTour = false
+                    scope.launch { TutorialManager.markHomeTourDone(context) }
+                },
+            )
+        }
+
+        // Edit mode tour (first time entering edit mode)
+        var showEditTour by remember { mutableStateOf(false) }
+        LaunchedEffect(isEditMode) {
+            if (isEditMode && !TutorialManager.isEditTourDone(context)) {
+                kotlinx.coroutines.delay(500)
+                showEditTour = true
+            }
+        }
+        if (showEditTour && isEditMode) {
+            CoachMarkOverlay(
+                steps = TutorialSteps.editModeTour,
+                onComplete = {
+                    showEditTour = false
+                    scope.launch { TutorialManager.markEditTourDone(context) }
+                },
             )
         }
 
