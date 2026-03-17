@@ -43,8 +43,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -163,15 +169,21 @@ fun HomeScreen(
 
     var screenSize by remember { mutableStateOf(IntSize.Zero) }
 
-    // Clock
+    // Clock with seconds + milliseconds progress
     var currentTime by remember { mutableStateOf("") }
     var currentDate by remember { mutableStateOf("") }
+    var secondsFraction by remember { mutableFloatStateOf(0f) }
+    var millisFraction by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
         while (true) {
             val now = Calendar.getInstance()
             currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now.time)
             currentDate = SimpleDateFormat("EEEE, d MMM", Locale.getDefault()).format(now.time)
-            kotlinx.coroutines.delay(1000)
+            val sec = now.get(Calendar.SECOND)
+            val millis = now.get(Calendar.MILLISECOND)
+            secondsFraction = (sec + millis / 1000f) / 60f
+            millisFraction = millis / 1000f
+            kotlinx.coroutines.delay(32) // ~30 FPS for smooth ms bar
         }
     }
 
@@ -489,6 +501,134 @@ fun HomeScreen(
             ) {
                 Text(text = currentTime, fontSize = 56.sp, fontWeight = FontWeight.Light, color = Color.White)
                 Text(text = currentDate, fontSize = 16.sp, color = Color.White.copy(alpha = 0.7f))
+
+                // Dual HUD: seconds + milliseconds progress
+                Spacer(modifier = Modifier.height(8.dp))
+                Canvas(
+                    modifier = Modifier
+                        .width(180.dp)
+                        .height(28.dp)
+                ) {
+                    val w = size.width
+                    val labelSpace = 28f // space for label text
+                    val barStart = labelSpace
+                    val barWidth = w - labelSpace - 4f
+                    val barH = 4f
+                    val cr = androidx.compose.ui.geometry.CornerRadius(barH / 2, barH / 2)
+
+                    // ── SEC bar (top) ──
+                    val secY = 4f
+                    // Track
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.06f),
+                        topLeft = Offset(barStart, secY),
+                        size = Size(barWidth, barH),
+                        cornerRadius = cr,
+                    )
+                    // Fill
+                    val secFill = barWidth * secondsFraction
+                    if (secFill > 0f) {
+                        // Glow behind
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color(0xFF7C4DFF).copy(alpha = 0.0f),
+                                    Color(0xFF7C4DFF).copy(alpha = 0.25f),
+                                ),
+                                startX = barStart,
+                                endX = barStart + secFill,
+                            ),
+                            topLeft = Offset(barStart, secY - 3f),
+                            size = Size(secFill, barH + 6f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(5f, 5f),
+                        )
+                        // Main bar
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(Color(0xFF00E5FF), Color(0xFF7C4DFF)),
+                                startX = barStart,
+                                endX = barStart + secFill,
+                            ),
+                            topLeft = Offset(barStart, secY),
+                            size = Size(secFill, barH),
+                            cornerRadius = cr,
+                        )
+                        // Endpoint dot
+                        drawCircle(
+                            color = Color.White,
+                            radius = 3.5f,
+                            center = Offset(barStart + secFill, secY + barH / 2),
+                        )
+                        drawCircle(
+                            color = Color(0xFF7C4DFF).copy(alpha = 0.4f),
+                            radius = 7f,
+                            center = Offset(barStart + secFill, secY + barH / 2),
+                        )
+                    }
+
+                    // ── MS bar (bottom) ──
+                    val msY = secY + barH + 8f
+                    // Track
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.06f),
+                        topLeft = Offset(barStart, msY),
+                        size = Size(barWidth, barH),
+                        cornerRadius = cr,
+                    )
+                    // Fill
+                    val msFill = barWidth * millisFraction
+                    if (msFill > 0f) {
+                        // Glow behind
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color(0xFF00E676).copy(alpha = 0.0f),
+                                    Color(0xFF00E676).copy(alpha = 0.2f),
+                                ),
+                                startX = barStart,
+                                endX = barStart + msFill,
+                            ),
+                            topLeft = Offset(barStart, msY - 3f),
+                            size = Size(msFill, barH + 6f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(5f, 5f),
+                        )
+                        // Main bar
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(Color(0xFF00E676), Color(0xFF00E5FF)),
+                                startX = barStart,
+                                endX = barStart + msFill,
+                            ),
+                            topLeft = Offset(barStart, msY),
+                            size = Size(msFill, barH),
+                            cornerRadius = cr,
+                        )
+                        // Endpoint dot
+                        drawCircle(
+                            color = Color.White,
+                            radius = 3f,
+                            center = Offset(barStart + msFill, msY + barH / 2),
+                        )
+                        drawCircle(
+                            color = Color(0xFF00E5FF).copy(alpha = 0.35f),
+                            radius = 6f,
+                            center = Offset(barStart + msFill, msY + barH / 2),
+                        )
+                    }
+
+                    // ── Labels ──
+                    val labelPaint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.argb(100, 255, 255, 255)
+                        textSize = 18f
+                        isAntiAlias = true
+                        typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+                    }
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.drawText("SEC", 0f, secY + barH + 1f, labelPaint)
+                        labelPaint.textSize = 16f
+                        canvas.nativeCanvas.drawText("MS", 2f, msY + barH + 1f, labelPaint)
+                    }
+                }
 
                 // Story caption — timed: 8s visible every 3 minutes
                 if (activeStory != null && storyCaption.isNotBlank()) {
