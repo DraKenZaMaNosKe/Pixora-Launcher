@@ -44,6 +44,7 @@ fun CatalogScreen(
     onIconRoomSelected: (IconRoom) -> Unit,
     viewModel: CatalogViewModel = viewModel(),
 ) {
+    val uiTheme by ThemeManager.current.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Wallpapers", "Stories", "Icon Rooms", "Day Cycle")
     val dayCycleThemes by viewModel.dayCycleThemes.collectAsState()
@@ -74,7 +75,7 @@ fun CatalogScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0A0F))
+            .background(uiTheme.background)
     ) {
         Column(
             modifier = Modifier
@@ -163,6 +164,7 @@ fun CatalogScreen(
 
 @Composable
 private fun CatalogTopBar(onClose: () -> Unit) {
+    val uiTheme by ThemeManager.current.collectAsState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -173,14 +175,14 @@ private fun CatalogTopBar(onClose: () -> Unit) {
             text = "Explore",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = uiTheme.onBackground,
             modifier = Modifier.weight(1f),
         )
         IconButton(onClick = onClose) {
             Icon(
                 Icons.Default.Close,
                 contentDescription = "Close",
-                tint = Color.White.copy(alpha = 0.7f),
+                tint = uiTheme.onBackground.copy(alpha = 0.7f),
             )
         }
     }
@@ -192,6 +194,7 @@ private fun CatalogTabBar(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
 ) {
+    val uiTheme by ThemeManager.current.collectAsState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -201,7 +204,7 @@ private fun CatalogTabBar(
         tabs.forEachIndexed { index, title ->
             val isSelected = index == selectedTab
             val bgColor by animateColorAsState(
-                targetValue = if (isSelected) Color(0xFF7C4DFF) else Color.Transparent,
+                targetValue = if (isSelected) uiTheme.primary else Color.Transparent,
                 animationSpec = tween(200),
                 label = "tab_bg"
             )
@@ -218,7 +221,7 @@ private fun CatalogTabBar(
                     text = title,
                     fontSize = 14.sp,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                    color = if (isSelected) uiTheme.onSurface else uiTheme.onBackground.copy(alpha = 0.5f),
                 )
             }
         }

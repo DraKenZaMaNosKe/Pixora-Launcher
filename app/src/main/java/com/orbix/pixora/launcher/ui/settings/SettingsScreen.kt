@@ -169,6 +169,55 @@ fun SettingsScreen(
                 checked = showEqualizer,
                 onCheckedChange = { viewModel.setEffect(EffectKeys.EQUALIZER, it) },
             )
+
+            // Equalizer style selector (only show when equalizer is on)
+            if (showEqualizer) {
+                val eqStyle by viewModel.equalizerStyle.collectAsState()
+                Text(
+                    text = "Equalizer Style",
+                    fontSize = 13.sp,
+                    color = uiTheme.onBackground.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    com.orbix.pixora.launcher.ui.components.EqualizerStyle.entries.forEach { style ->
+                        val isSelected = style.name == eqStyle
+                        val bgColor by animateColorAsState(
+                            if (isSelected) uiTheme.primary else uiTheme.surfaceVariant,
+                            tween(200), label = "eq_style_bg"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(bgColor)
+                                .clickable {
+                                    viewModel.setEqualizerStyle(style.name)
+                                    SoundEngine.playTap()
+                                }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(style.emoji, fontSize = 16.sp)
+                                Text(
+                                    style.label,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) uiTheme.onSurface else uiTheme.onBackground.copy(alpha = 0.5f),
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
             SettingsToggle(
                 title = "Battery Ring",
                 subtitle = "Circular battery percentage indicator",
@@ -405,13 +454,13 @@ fun SettingsScreen(
                     } else if (backupList.isEmpty()) {
                         Text(
                             text = "No backups found in Downloads/Pixora",
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = uiTheme.onSurface.copy(alpha = 0.7f),
                         )
                     } else {
                         Column {
                             Text(
                                 text = "Select a backup to restore:",
-                                color = Color.White.copy(alpha = 0.7f),
+                                color = uiTheme.onSurface.copy(alpha = 0.7f),
                                 modifier = Modifier.padding(bottom = 8.dp),
                             )
                             backupList.forEach { filename ->
@@ -499,6 +548,8 @@ private fun SettingsToggle(
             colors = SwitchDefaults.colors(
                 checkedThumbColor = uiTheme.primary,
                 checkedTrackColor = uiTheme.primary.copy(alpha = 0.4f),
+                uncheckedThumbColor = uiTheme.onBackground.copy(alpha = 0.5f),
+                uncheckedTrackColor = uiTheme.surfaceVariant,
             ),
         )
     }

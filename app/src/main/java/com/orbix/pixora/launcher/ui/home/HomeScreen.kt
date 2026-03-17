@@ -113,6 +113,8 @@ fun HomeScreen(
     val gridSlots by viewModel.gridSlots.collectAsState()
     val homePage by viewModel.homePage.collectAsState()
     val showAmbientParticles by viewModel.showAmbientParticles.collectAsState()
+    val eqStyleName by viewModel.equalizerStyle.collectAsState()
+    val eqStyle = try { EqualizerStyle.valueOf(eqStyleName) } catch (_: Exception) { EqualizerStyle.CLASSIC }
     val recentApps by viewModel.recentApps.collectAsState()
 
     // Story state
@@ -724,7 +726,7 @@ fun HomeScreen(
                 SystemRingsOverlay(glowColor = glowColor, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 155.dp, end = 8.dp))
             }
             if (showEqualizer) {
-                EqualizerOverlay(glowColor = glowColor, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp).navigationBarsPadding().padding(horizontal = 24.dp))
+                EqualizerOverlay(glowColor = glowColor, eqColors = uiTheme.eqGradient, style = eqStyle, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp).navigationBarsPadding().padding(horizontal = 24.dp))
             }
 
             // Catalog + Settings buttons

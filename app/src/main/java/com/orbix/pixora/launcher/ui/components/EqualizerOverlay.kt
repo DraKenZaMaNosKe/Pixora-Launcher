@@ -25,6 +25,8 @@ private const val SEGMENTS = 20
 fun EqualizerOverlay(
     modifier: Modifier = Modifier,
     glowColor: Color = Color(0xFF7C4DFF),
+    eqColors: List<Color> = listOf(Color(0xFF00E5FF), Color(0xFF00E676), Color(0xFFFFEB3B), Color(0xFFFF9800), Color(0xFFFF1744)),
+    style: EqualizerStyle = EqualizerStyle.CLASSIC,
 ) {
     val context = LocalContext.current
     val barLevels = remember { FloatArray(BAR_COUNT) }
@@ -92,45 +94,14 @@ fun EqualizerOverlay(
     @Suppress("UNUSED_EXPRESSION") frameCount
 
     Canvas(modifier = modifier.height(100.dp).fillMaxWidth()) {
-        val totalWidth = size.width
-        val totalHeight = size.height
-        val halfHeight = totalHeight / 2f
-        val barWidth = totalWidth / (BAR_COUNT * 1.8f)
-        val gap = barWidth * 0.35f
-        val totalBarsWidth = BAR_COUNT * barWidth + (BAR_COUNT - 1) * gap
-        val startX = (totalWidth - totalBarsWidth) / 2f
-
-        for (i in 0 until BAR_COUNT) {
-            val x = startX + i * (barWidth + gap)
-            val level = barLevels[i].coerceIn(0f, 1f)
-            val peak = peakLevels[i].coerceIn(0f, 1f)
-            val barColor = barGradientColor(i, BAR_COUNT)
-
-            // Draw glow behind bar (wider, semi-transparent)
-            val glowAlpha = (level * 0.3f).coerceIn(0f, 0.3f)
-            val glowHeight = level * halfHeight
-            // Upward glow
-            drawRoundRect(
-                color = barColor.copy(alpha = glowAlpha),
-                topLeft = Offset(x - barWidth * 0.3f, halfHeight - glowHeight),
-                size = Size(barWidth * 1.6f, glowHeight),
-                cornerRadius = CornerRadius(4f, 4f),
-            )
-            // Downward glow (mirror)
-            drawRoundRect(
-                color = barColor.copy(alpha = glowAlpha * 0.5f),
-                topLeft = Offset(x - barWidth * 0.3f, halfHeight),
-                size = Size(barWidth * 1.6f, glowHeight * 0.6f),
-                cornerRadius = CornerRadius(4f, 4f),
-            )
-
-            // Draw main bars upward
-            drawBarSegments(x, halfHeight, barWidth, level, barColor, goUp = true)
-
-            // Draw mirror bars downward (dimmer, shorter)
-            drawBarSegments(x, halfHeight, barWidth, level * 0.5f, barColor.copy(alpha = 0.35f), goUp = false)
-
-        }
+        drawEqualizer(
+            style = style,
+            barLevels = barLevels,
+            peakLevels = peakLevels,
+            barCount = BAR_COUNT,
+            colors = eqColors,
+            glowColor = glowColor,
+        )
     }
 }
 
@@ -165,15 +136,14 @@ private fun DrawScope.drawBarSegments(
     }
 }
 
-/** Color gradient across bars: cyan → green → yellow → orange → magenta */
-private fun barGradientColor(index: Int, total: Int): Color {
+/** Color gradient across bars using the provided color stops */
+private fun barGradientColor(index: Int, total: Int, colors: List<Color>): Color {
+    if (colors.size < 2) return colors.firstOrNull() ?: Color.White
     val ratio = index.toFloat() / (total - 1).coerceAtLeast(1)
-    return when {
-        ratio < 0.25f -> lerpColor(Color(0xFF00E5FF), Color(0xFF00E676), ratio / 0.25f)
-        ratio < 0.5f -> lerpColor(Color(0xFF00E676), Color(0xFFFFEB3B), (ratio - 0.25f) / 0.25f)
-        ratio < 0.75f -> lerpColor(Color(0xFFFFEB3B), Color(0xFFFF9800), (ratio - 0.5f) / 0.25f)
-        else -> lerpColor(Color(0xFFFF9800), Color(0xFFFF1744), (ratio - 0.75f) / 0.25f)
-    }
+    val segments = colors.size - 1
+    val segIndex = (ratio * segments).toInt().coerceAtMost(segments - 1)
+    val segRatio = (ratio * segments - segIndex).coerceIn(0f, 1f)
+    return lerpColor(colors[segIndex], colors[segIndex + 1], segRatio)
 }
 
 private fun lerpColor(a: Color, b: Color, t: Float): Color {
