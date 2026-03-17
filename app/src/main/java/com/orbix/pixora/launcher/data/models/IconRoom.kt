@@ -4,10 +4,11 @@ data class IconRoom(
     val id: String,
     val title: String,
     val assetName: String,
+    val isBundled: Boolean = false,
 ) {
     companion object {
         val ALL = listOf(
-            IconRoom("01", "Mystic Portal", "icon_room_01"),
+            IconRoom("01", "Mystic Portal", "icon_room_01", isBundled = true),
             IconRoom("02", "Digital Dawn", "icon_room_02"),
             IconRoom("03", "Candy Kingdom", "icon_room_03"),
             IconRoom("04", "Neon District", "icon_room_04"),

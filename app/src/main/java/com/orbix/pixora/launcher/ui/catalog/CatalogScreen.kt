@@ -470,6 +470,7 @@ private fun IconRoomsTab(
 
 @Composable
 private fun IconRoomCard(room: IconRoom, onClick: () -> Unit) {
+    val context = LocalContext.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -478,8 +479,8 @@ private fun IconRoomCard(room: IconRoom, onClick: () -> Unit) {
             .clickable(onClick = onClick)
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data("file:///android_asset/icon_rooms/${room.assetName}.png")
+            model = ImageRequest.Builder(context)
+                .data(com.orbix.pixora.launcher.service.IconRoomRepository.getRoomImageSource(context, room))
                 .crossfade(true)
                 .build(),
             contentDescription = room.title,

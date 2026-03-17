@@ -73,6 +73,8 @@ import coil.size.Size as CoilSize
 import com.orbix.pixora.launcher.LauncherActivity
 import com.orbix.pixora.launcher.audio.SoundEngine
 import com.orbix.pixora.launcher.data.models.AppInfo
+import com.orbix.pixora.launcher.data.models.IconRoom
+import com.orbix.pixora.launcher.service.IconRoomRepository
 import com.orbix.pixora.launcher.service.StoryManager
 import com.orbix.pixora.launcher.ui.components.*
 import com.orbix.pixora.launcher.ui.drawer.AppDrawer
@@ -173,16 +175,22 @@ fun HomeScreen(
         }
     }
 
-    // Resolve background
-    val bgImageData: Any = remember(backgroundUri) {
+    // Resolve background — icon rooms use IconRoomRepository for cached/Supabase loading
+    val bgContext = LocalContext.current
+    val bgImageData: Any = remember(backgroundUri, bgContext) {
         when {
             backgroundUri.startsWith("asset:") -> {
-                val roomId = backgroundUri.removePrefix("asset:")
-                "file:///android_asset/icon_rooms/$roomId.png"
+                val assetName = backgroundUri.removePrefix("asset:")
+                val room = IconRoom.ALL.find { it.assetName == assetName }
+                if (room != null) {
+                    IconRoomRepository.getRoomImageSource(bgContext, room)
+                } else {
+                    "file:///android_asset/icon_rooms/icon_room_01.webp"
+                }
             }
             backgroundUri.startsWith("pano:") -> java.io.File(backgroundUri.removePrefix("pano:"))
             backgroundUri.startsWith("file:") -> java.io.File(backgroundUri.removePrefix("file:"))
-            else -> "file:///android_asset/icon_rooms/icon_room_01.png"
+            else -> "file:///android_asset/icon_rooms/icon_room_01.webp"
         }
     }
     val isPanoramic = backgroundUri.startsWith("asset:") || backgroundUri.startsWith("pano:")

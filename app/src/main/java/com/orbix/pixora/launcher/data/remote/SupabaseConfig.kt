@@ -8,4 +8,7 @@ object SupabaseConfig {
     fun imageUrl(filename: String): String = "$STORAGE_BASE/$BUCKET/$filename"
     fun catalogUrl(): String = "$STORAGE_BASE/$BUCKET/dynamic_catalog.json"
     fun storiesCatalogUrl(): String = "$STORAGE_BASE/$BUCKET/stories_catalog.json"
+
+    /** Icon room image URL (WebP format) */
+    fun iconRoomUrl(assetName: String): String = "$STORAGE_BASE/$BUCKET/icon_rooms/$assetName.webp"
 }

@@ -84,7 +84,7 @@ fun IconRoomPreviewScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
-                .data("file:///android_asset/icon_rooms/${room.assetName}.png")
+                .data(com.orbix.pixora.launcher.service.IconRoomRepository.getRoomImageSource(LocalContext.current, room))
                 .crossfade(true)
                 .build(),
             contentDescription = room.title,

@@ -223,7 +223,7 @@ private fun RoomPickerStep(onNext: () -> Unit) {
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data("file:///android_asset/icon_rooms/${rooms[selectedIndex].assetName}.png")
+                    .data(com.orbix.pixora.launcher.service.IconRoomRepository.getRoomImageSource(context, rooms[selectedIndex]))
                     .crossfade(true)
                     .build(),
                 contentDescription = rooms[selectedIndex].title,
@@ -274,7 +274,7 @@ private fun RoomPickerStep(onNext: () -> Unit) {
                 ) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data("file:///android_asset/icon_rooms/${room.assetName}.png")
+                            .data(com.orbix.pixora.launcher.service.IconRoomRepository.getRoomImageSource(context, room))
                             .crossfade(true)
                             .build(),
                         contentDescription = room.title,

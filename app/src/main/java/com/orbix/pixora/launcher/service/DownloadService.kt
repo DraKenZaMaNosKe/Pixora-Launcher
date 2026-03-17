@@ -76,16 +76,23 @@ class DownloadService(private val context: Context) {
 
     suspend fun copyAssetToFile(assetName: String): String? = withContext(Dispatchers.IO) {
         try {
+            // Try WebP first (new format), fallback to PNG (legacy)
             val dir = File(context.filesDir, "icon_rooms").also { it.mkdirs() }
-            val file = File(dir, "$assetName.png")
-            if (file.exists()) return@withContext file.absolutePath
+            val webpFile = File(dir, "$assetName.webp")
+            if (webpFile.exists()) return@withContext webpFile.absolutePath
+            val pngFile = File(dir, "$assetName.png")
+            if (pngFile.exists()) return@withContext pngFile.absolutePath
 
-            context.assets.open("icon_rooms/$assetName.png").use { input ->
-                file.outputStream().use { output ->
-                    input.copyTo(output)
+            // Try to copy WebP from assets
+            try {
+                context.assets.open("icon_rooms/$assetName.webp").use { input ->
+                    webpFile.outputStream().use { output -> input.copyTo(output) }
                 }
-            }
-            file.absolutePath
+                return@withContext webpFile.absolutePath
+            } catch (_: Exception) { }
+
+            // Fallback: download from Supabase via IconRoomRepository
+            IconRoomRepository.downloadRoom(context, assetName)
         } catch (e: Exception) {
             Log.e("PixoraDownload", "copyAsset failed: $assetName", e)
             null
