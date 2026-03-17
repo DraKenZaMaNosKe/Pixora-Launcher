@@ -14,6 +14,7 @@ import com.orbix.pixora.launcher.ui.pixoraDataStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.StateFlow
@@ -68,11 +69,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _showAmbientParticles = MutableStateFlow(false)
     val showAmbientParticles: StateFlow<Boolean> = _showAmbientParticles
 
+    private val _recentApps = MutableStateFlow<List<String>>(emptyList())
+    val recentApps: StateFlow<List<String>> = _recentApps
+
     companion object {
         val KEY_BACKGROUND = stringPreferencesKey("home_background")
         val KEY_DOCK_APPS = stringPreferencesKey("dock_apps")
         val KEY_GRID_LAYOUTS = stringPreferencesKey("grid_layouts") // Map<wallpaperUri, slots>
         val KEY_HOME_PAGES = stringPreferencesKey("home_pages") // Map<wallpaperUri, pageIndex>
+        val KEY_RECENT_APPS = stringPreferencesKey("recent_apps")
         const val APPS_PER_PAGE = 16
 
         val DEFAULT_DOCK = listOf(
@@ -98,6 +103,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         loadBackgroundThenGrid()
         loadDockApps()
         loadEffects()
+        loadRecentApps()
     }
 
     /**
@@ -143,10 +149,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Clean empty leading/trailing pages from saved data
         if (saved != null) {
             while (saved.size > APPS_PER_PAGE && saved.subList(0, APPS_PER_PAGE).all { it == null }) {
-                repeat(APPS_PER_PAGE) { saved.removeAt(0) }
+                saved.subList(0, APPS_PER_PAGE).clear()
             }
             while (saved.size > APPS_PER_PAGE && saved.subList(saved.size - APPS_PER_PAGE, saved.size).all { it == null }) {
-                repeat(APPS_PER_PAGE) { saved.removeAt(saved.size - 1) }
+                saved.subList(saved.size - APPS_PER_PAGE, saved.size).clear()
             }
             // Save cleaned version back
             if (saved != allLayouts[uri]) {
@@ -168,7 +174,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun launchApp(packageName: String) { appsRepo.launchApp(packageName) }
+    fun launchApp(packageName: String) {
+        appsRepo.launchApp(packageName)
+        addToRecents(packageName)
+    }
     fun setPage(page: Int) { _currentPage.value = page }
 
     fun selectRoom(roomId: String) {
@@ -477,9 +486,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Reset to alphabetical order (current wallpaper only) */
-    /** Persist all layouts and home pages to DataStore (mutex-guarded) */
+    private var persistJob: Job? = null
+
+    /** Persist all layouts and home pages to DataStore (debounced + mutex-guarded) */
     private fun persistLayouts() {
-        viewModelScope.launch {
+        persistJob?.cancel()
+        persistJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(500) // debounce 500ms
             layoutSaveMutex.withLock {
                 dataStore.edit {
                     it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts)
@@ -630,4 +643,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openDrawer() { _isDrawerOpen.value = true }
     fun closeDrawer() { _isDrawerOpen.value = false }
+
+    // ── Recent Apps ──────────────────────────────────────────
+
+    private fun loadRecentApps() {
+        viewModelScope.launch {
+            val saved = dataStore.data.map { it[KEY_RECENT_APPS] }.first()
+            if (saved != null) {
+                val list: List<String> = gson.fromJson(saved, object : TypeToken<List<String>>() {}.type)
+                _recentApps.value = list
+            }
+        }
+    }
+
+    private fun addToRecents(packageName: String) {
+        val current = _recentApps.value.toMutableList()
+        current.remove(packageName)
+        current.add(0, packageName)
+        val trimmed = current.take(8)
+        _recentApps.value = trimmed
+        viewModelScope.launch {
+            dataStore.edit { it[KEY_RECENT_APPS] = gson.toJson(trimmed) }
+        }
+    }
 }

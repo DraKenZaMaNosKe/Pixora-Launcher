@@ -71,6 +71,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Size as CoilSize
 import com.orbix.pixora.launcher.LauncherActivity
+import com.orbix.pixora.launcher.audio.SoundEngine
 import com.orbix.pixora.launcher.data.models.AppInfo
 import com.orbix.pixora.launcher.service.StoryManager
 import com.orbix.pixora.launcher.ui.components.*
@@ -99,6 +100,7 @@ fun HomeScreen(
     val gridSlots by viewModel.gridSlots.collectAsState()
     val homePage by viewModel.homePage.collectAsState()
     val showAmbientParticles by viewModel.showAmbientParticles.collectAsState()
+    val recentApps by viewModel.recentApps.collectAsState()
 
     // Story state
     val activeStory by StoryManager.activeStory.collectAsState()
@@ -147,6 +149,13 @@ fun HomeScreen(
         if (homeButtonEvent > 0 && homePage in 0 until pageCount) {
             viewModel.triggerGoHome()
             pagerState.animateScrollToPage(homePage)
+        }
+    }
+
+    // Page swipe sound
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage > 0 || appPages.isNotEmpty()) {
+            SoundEngine.playPageSwipe()
         }
     }
 
@@ -205,12 +214,12 @@ fun HomeScreen(
             .onSizeChanged { screenSize = it }
             .pointerInput(Unit) {
                 detectVerticalDragGestures { _, dragAmount ->
-                    if (dragAmount < -50) viewModel.openDrawer()
+                    if (dragAmount < -50) { SoundEngine.playDrawerOpen(); viewModel.openDrawer() }
                 }
             }
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onLongPress = { viewModel.enterEditMode() }
+                    onLongPress = { SoundEngine.playEditModeEnter(); viewModel.enterEditMode() }
                 )
             }
             // Observe ALL touches at Initial pass for glow effect — does NOT consume
@@ -274,9 +283,10 @@ fun HomeScreen(
                         isEditMode = isEditMode,
                         onAppClick = { pkg ->
                             view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                            SoundEngine.playTap()
                             viewModel.launchApp(pkg)
                         },
-                        onLongPress = { viewModel.enterEditMode() },
+                        onLongPress = { SoundEngine.playLongPress(); viewModel.enterEditMode() },
                         onMove = { from, to ->
                             viewModel.moveApp(pageOffset + from, pageOffset + to)
                         },
@@ -393,6 +403,7 @@ fun HomeScreen(
                             )
                             .clickable {
                                 view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                SoundEngine.playEditModeExit()
                                 viewModel.exitEditMode()
                             }
                             .padding(horizontal = 20.dp, vertical = 10.dp),
@@ -558,7 +569,7 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(24.dp)) }
                 Box(
-                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFF7C4DFF).copy(alpha = 0.5f)).clickable { viewModel.openDrawer() },
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFF7C4DFF).copy(alpha = 0.5f)).clickable { SoundEngine.playDrawerOpen(); viewModel.openDrawer() },
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.Apps, contentDescription = "All apps", tint = Color.White, modifier = Modifier.size(24.dp)) }
             }
@@ -653,6 +664,7 @@ fun HomeScreen(
                 homeApps = homeAppSet,
                 onAddToHome = { pkg -> viewModel.addAppToHome(pkg) },
                 onRemoveFromHome = { pkg -> viewModel.removeAppFromHome(pkg) },
+                recentApps = recentApps,
             )
         }
     }

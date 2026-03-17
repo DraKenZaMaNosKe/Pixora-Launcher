@@ -8,8 +8,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,9 +23,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import com.orbix.pixora.launcher.audio.AudioCaptureService
+import com.orbix.pixora.launcher.audio.SoundEngine
+import com.orbix.pixora.launcher.service.BackupService
 import com.orbix.pixora.launcher.ui.EffectKeys
 import com.orbix.pixora.launcher.ui.home.HomeViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -38,6 +45,16 @@ fun SettingsScreen(
     val showSystemRings by viewModel.showSystemRings.collectAsState()
     val showAmbientParticles by viewModel.showAmbientParticles.collectAsState()
     val isCapturing by AudioCaptureService.isCapturing.collectAsState()
+    val soundsEnabled by SoundEngine.enabled.collectAsState()
+    val soundTheme by SoundEngine.currentTheme.collectAsState()
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    var showImportDialog by remember { mutableStateOf(false) }
+    var backupList by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isLoadingBackups by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -111,6 +128,61 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Sound section
+            SectionHeader("Sounds")
+
+            SettingsToggle(
+                title = "UI Sounds",
+                subtitle = "Play sounds on interactions",
+                checked = soundsEnabled,
+                onCheckedChange = { SoundEngine.setEnabled(context, it) },
+            )
+
+            if (soundsEnabled) {
+                Text(
+                    text = "Sound Theme",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SoundEngine.availableThemes.forEach { theme ->
+                        val isSelected = theme == soundTheme
+                        val bgColor by animateColorAsState(
+                            if (isSelected) Color(0xFF7C4DFF) else Color(0xFF1A1A2E),
+                            tween(200), label = "theme_bg"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(bgColor)
+                                .clickable {
+                                    SoundEngine.setTheme(context, theme)
+                                    SoundEngine.playTap()
+                                }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = theme.replaceFirstChar { it.uppercase() },
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // Quick actions section
             SectionHeader("Quick Actions")
 
@@ -128,6 +200,43 @@ fun SettingsScreen(
                 subtitle = "Make Pixora your home screen",
                 accentColor = Color(0xFF7C4DFF),
                 onClick = onSetDefaultLauncher,
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Backup & Restore section
+            SectionHeader("Backup & Restore")
+
+            SettingsActionButton(
+                icon = Icons.Default.Upload,
+                title = "Export Backup",
+                subtitle = "Save layouts, dock, effects to Downloads/Pixora",
+                accentColor = Color(0xFF00E5FF),
+                onClick = {
+                    scope.launch {
+                        val result = BackupService.exportBackup(context)
+                        if (result != null) {
+                            snackbarHostState.showSnackbar("Backup saved: $result")
+                        } else {
+                            snackbarHostState.showSnackbar("Backup failed")
+                        }
+                    }
+                },
+            )
+
+            SettingsActionButton(
+                icon = Icons.Default.Download,
+                title = "Import Backup",
+                subtitle = "Restore from a previous backup file",
+                accentColor = Color(0xFF69F0AE),
+                onClick = {
+                    scope.launch {
+                        isLoadingBackups = true
+                        backupList = BackupService.listBackups(context)
+                        isLoadingBackups = false
+                        showImportDialog = true
+                    }
+                },
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -166,6 +275,85 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(80.dp))
+        }
+
+        // Snackbar
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
+        ) { data ->
+            Snackbar(
+                snackbarData = data,
+                containerColor = Color(0xFF1A1A2E),
+                contentColor = Color.White,
+            )
+        }
+
+        // Import backup dialog
+        if (showImportDialog) {
+            AlertDialog(
+                onDismissRequest = { showImportDialog = false },
+                title = { Text("Import Backup") },
+                text = {
+                    if (isLoadingBackups) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(color = Color(0xFF7C4DFF))
+                        }
+                    } else if (backupList.isEmpty()) {
+                        Text(
+                            text = "No backups found in Downloads/Pixora",
+                            color = Color.White.copy(alpha = 0.7f),
+                        )
+                    } else {
+                        Column {
+                            Text(
+                                text = "Select a backup to restore:",
+                                color = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 8.dp),
+                            )
+                            backupList.forEach { filename ->
+                                Text(
+                                    text = filename,
+                                    color = Color(0xFF69F0AE),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            showImportDialog = false
+                                            scope.launch {
+                                                val json = BackupService.readBackup(context, filename)
+                                                if (json != null) {
+                                                    val success = BackupService.importBackup(context, json)
+                                                    snackbarHostState.showSnackbar(
+                                                        if (success) "Backup restored — restart launcher to apply"
+                                                        else "Import failed"
+                                                    )
+                                                } else {
+                                                    snackbarHostState.showSnackbar("Could not read backup file")
+                                                }
+                                            }
+                                        }
+                                        .padding(vertical = 10.dp, horizontal = 8.dp),
+                                    fontSize = 14.sp,
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showImportDialog = false }) { Text("Cancel") }
+                },
+                containerColor = Color(0xFF1A1A2E),
+                titleContentColor = Color.White,
+                textContentColor = Color.White.copy(alpha = 0.7f),
+            )
         }
     }
 }

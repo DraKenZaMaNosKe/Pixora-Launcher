@@ -39,8 +39,11 @@ class WallpaperInstallService(private val context: Context) {
                 Target.LOCK -> WallpaperManager.FLAG_LOCK
                 Target.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
             }
-            manager.setBitmap(bitmap, null, true, flag)
-            bitmap.recycle()
+            try {
+                manager.setBitmap(bitmap, null, true, flag)
+            } finally {
+                bitmap.recycle()
+            }
             Log.d("PixoraInstall", "Wallpaper set successfully!")
             true
         } catch (e: Exception) {

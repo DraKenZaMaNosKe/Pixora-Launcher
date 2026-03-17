@@ -1,6 +1,7 @@
 package com.orbix.pixora.launcher.service
 
 import android.content.Context
+import android.util.Log
 import com.google.gson.Gson
 import com.orbix.pixora.launcher.data.models.StoryCatalog
 import com.orbix.pixora.launcher.data.models.Story
@@ -43,15 +44,21 @@ class CatalogService(private val context: Context) {
         }
 
         // Try network
-        try {
-            val json = fetchUrl(SupabaseConfig.catalogUrl())
-            val catalog = gson.fromJson(json, WallpaperCatalog::class.java)
-            wallpaperCache = catalog.wallpapers.sortedBy { it.sortOrder }
-            lastWallpaperFetch = System.currentTimeMillis()
-            // Save to disk cache
-            File(cacheDir, "catalog_cache.json").writeText(json)
-            return@withContext wallpaperCache!!
-        } catch (_: Exception) { }
+        if (!NetworkHelper.isOnline(context)) {
+            Log.d("CatalogService", "No network, skipping fetch")
+        } else {
+            try {
+                val json = fetchUrl(SupabaseConfig.catalogUrl())
+                val catalog = gson.fromJson(json, WallpaperCatalog::class.java)
+                wallpaperCache = catalog.wallpapers.sortedBy { it.sortOrder }
+                lastWallpaperFetch = System.currentTimeMillis()
+                // Save to disk cache
+                File(cacheDir, "catalog_cache.json").writeText(json)
+                return@withContext wallpaperCache!!
+            } catch (e: Exception) {
+                Log.w("CatalogService", "Network fetch failed: ${e.message}")
+            }
+        }
 
         // Fallback to disk cache
         try {
@@ -62,7 +69,9 @@ class CatalogService(private val context: Context) {
                 lastWallpaperFetch = System.currentTimeMillis()
                 return@withContext wallpaperCache!!
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) {
+            Log.w("CatalogService", "Disk cache read failed: ${e.message}")
+        }
 
         emptyList()
     }
@@ -73,14 +82,20 @@ class CatalogService(private val context: Context) {
             return@withContext storyCache!!
         }
 
-        try {
-            val json = fetchUrl(SupabaseConfig.storiesCatalogUrl())
-            val catalog = gson.fromJson(json, StoryCatalog::class.java)
-            storyCache = catalog.stories
-            lastStoryFetch = System.currentTimeMillis()
-            File(cacheDir, "stories_cache.json").writeText(json)
-            return@withContext storyCache!!
-        } catch (_: Exception) { }
+        if (!NetworkHelper.isOnline(context)) {
+            Log.d("CatalogService", "No network, skipping fetch")
+        } else {
+            try {
+                val json = fetchUrl(SupabaseConfig.storiesCatalogUrl())
+                val catalog = gson.fromJson(json, StoryCatalog::class.java)
+                storyCache = catalog.stories
+                lastStoryFetch = System.currentTimeMillis()
+                File(cacheDir, "stories_cache.json").writeText(json)
+                return@withContext storyCache!!
+            } catch (e: Exception) {
+                Log.w("CatalogService", "Network fetch failed: ${e.message}")
+            }
+        }
 
         try {
             val file = File(cacheDir, "stories_cache.json")
@@ -90,7 +105,9 @@ class CatalogService(private val context: Context) {
                 lastStoryFetch = System.currentTimeMillis()
                 return@withContext storyCache!!
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) {
+            Log.w("CatalogService", "Disk cache read failed: ${e.message}")
+        }
 
         emptyList()
     }

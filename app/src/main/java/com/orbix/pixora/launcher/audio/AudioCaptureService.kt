@@ -52,16 +52,17 @@ class AudioCaptureService : Service() {
         val isCapturing: StateFlow<Boolean> = _isCapturing
 
         // Store projection data temporarily so it survives the intent transfer
-        @Volatile
+        private val lock = Any()
         private var pendingResultCode: Int = Int.MIN_VALUE
-        @Volatile
         private var pendingData: Intent? = null
 
         fun start(context: Context, resultCode: Int, data: Intent) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
             // Store in companion so the service can pick it up
-            pendingResultCode = resultCode
-            pendingData = data
+            synchronized(lock) {
+                pendingResultCode = resultCode
+                pendingData = data
+            }
             val intent = Intent(context, AudioCaptureService::class.java)
             context.startForegroundService(intent)
         }
@@ -101,10 +102,14 @@ class AudioCaptureService : Service() {
         }
 
         // Get the projection data from companion storage
-        val resultCode = pendingResultCode
-        val data = pendingData
-        pendingResultCode = Int.MIN_VALUE
-        pendingData = null
+        val resultCode: Int
+        val data: Intent?
+        synchronized(lock) {
+            resultCode = pendingResultCode
+            data = pendingData
+            pendingResultCode = Int.MIN_VALUE
+            pendingData = null
+        }
 
         if (resultCode == Int.MIN_VALUE || data == null) {
             Log.e(TAG, "Missing MediaProjection result (code=$resultCode, data=${data != null})")

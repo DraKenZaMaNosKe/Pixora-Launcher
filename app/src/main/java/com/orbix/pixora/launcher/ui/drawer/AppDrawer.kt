@@ -7,9 +7,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,6 +41,7 @@ fun AppDrawer(
     homeApps: Set<String> = emptySet(),
     onAddToHome: (String) -> Unit = {},
     onRemoveFromHome: (String) -> Unit = {},
+    recentApps: List<String> = emptyList(),
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
@@ -107,6 +110,64 @@ fun AppDrawer(
             )
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            // Recent apps section
+            if (searchQuery.isBlank() && recentApps.isNotEmpty()) {
+                val recentAppInfos = remember(recentApps, apps) {
+                    recentApps.mapNotNull { pkg -> apps.find { it.packageName == pkg } }
+                }
+                if (recentAppInfos.isNotEmpty()) {
+                    Text(
+                        text = "Recent",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    )
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(recentAppInfos, key = { it.packageName }) { app ->
+                            val bitmap = remember(app.iconBytes) {
+                                BitmapFactory.decodeByteArray(app.iconBytes, 0, app.iconBytes.size)
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .clickable { onAppClick(app.packageName) }
+                                    .padding(4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                if (bitmap != null) {
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = app.label,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(12.dp)),
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = app.label,
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 56.dp),
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        thickness = 0.5.dp,
+                        color = Color.White.copy(alpha = 0.06f),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
 
             // App grid with staggered fan animation
             LazyVerticalGrid(

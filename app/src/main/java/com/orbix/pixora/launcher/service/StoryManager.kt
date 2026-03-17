@@ -58,27 +58,31 @@ object StoryManager {
         val prefs = context.pixoraDataStore.data.first()
         val storyJson = prefs[KEY_ACTIVE_STORY]
         if (storyJson != null) {
-            val story = gson.fromJson(storyJson, Story::class.java)
-            _activeStory.value = story
-            _currentFrameIndex.value = prefs[KEY_CURRENT_FRAME] ?: 0
-            _langIndex.value = prefs[KEY_LANG_INDEX] ?: 1
+            try {
+                val story = gson.fromJson(storyJson, Story::class.java)
+                _activeStory.value = story
+                _currentFrameIndex.value = prefs[KEY_CURRENT_FRAME] ?: 0
+                _langIndex.value = prefs[KEY_LANG_INDEX] ?: 1
 
-            // Restore caption
-            val frameIdx = _currentFrameIndex.value
-            if (frameIdx in story.frames.indices) {
-                _currentCaption.value = story.frames[frameIdx].captionForLang(_langIndex.value)
-            }
-
-            // Restore frame path
-            val pathsJson = prefs[KEY_FRAME_PATHS]
-            if (pathsJson != null) {
-                val paths: List<String> = gson.fromJson(pathsJson, object : TypeToken<List<String>>() {}.type)
-                if (frameIdx in paths.indices) {
-                    _currentFramePath.value = paths[frameIdx]
+                // Restore caption
+                val frameIdx = _currentFrameIndex.value
+                if (frameIdx in story.frames.indices) {
+                    _currentCaption.value = story.frames[frameIdx].captionForLang(_langIndex.value)
                 }
-            }
 
-            Log.d(TAG, "Loaded active story: ${story.title}, frame $frameIdx")
+                // Restore frame path
+                val pathsJson = prefs[KEY_FRAME_PATHS]
+                if (pathsJson != null) {
+                    val paths: List<String> = gson.fromJson(pathsJson, object : TypeToken<List<String>>() {}.type)
+                    if (frameIdx in paths.indices) {
+                        _currentFramePath.value = paths[frameIdx]
+                    }
+                }
+
+                Log.d(TAG, "Loaded active story: ${story.title}, frame $frameIdx")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to parse stored story JSON", e)
+            }
         }
     }
 
@@ -130,7 +134,9 @@ object StoryManager {
 
         _activeStory.value = story
         _currentFrameIndex.value = 0
-        _currentFramePath.value = paths[0]
+        if (paths.isNotEmpty()) {
+            _currentFramePath.value = paths[0]
+        }
 
         // Set caption
         if (story.frames.isNotEmpty()) {
@@ -138,8 +144,10 @@ object StoryManager {
         }
 
         // Apply first frame as system wallpaper too
-        val installService = WallpaperInstallService(context)
-        installService.setWallpaper(paths[0], WallpaperInstallService.Target.BOTH)
+        if (paths.isNotEmpty()) {
+            val installService = WallpaperInstallService(context)
+            installService.setWallpaper(paths[0], WallpaperInstallService.Target.BOTH)
+        }
 
         // Schedule periodic frame cycling
         scheduleWork(context, story.intervalMinutes)
