@@ -16,19 +16,29 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.orbix.pixora.launcher.audio.AudioCaptureService
 import com.orbix.pixora.launcher.audio.AudioSessionTracker
+import com.orbix.pixora.launcher.service.StoryManager
 import com.orbix.pixora.launcher.ui.PixoraLauncherApp
 import com.orbix.pixora.launcher.ui.theme.PixoraTheme
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 class LauncherActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "Pixora"
+
+        /** Emits a timestamp whenever the system home button is pressed */
+        private val _homeButtonPressed = MutableStateFlow(0L)
+        val homeButtonPressed: StateFlow<Long> = _homeButtonPressed
     }
 
     private val mediaProjectionLauncher = registerForActivityResult(
@@ -67,6 +77,11 @@ class LauncherActivity : ComponentActivity() {
 
         AudioSessionTracker.register(applicationContext)
 
+        // Load active story state
+        lifecycleScope.launch {
+            StoryManager.loadState(applicationContext)
+        }
+
         setContent {
             PixoraTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -79,10 +94,12 @@ class LauncherActivity : ComponentActivity() {
         }
 
         // Only request on fresh launch, not on recreation
+        // Use lifecycleScope to avoid Handler leak
         if (savedInstanceState == null) {
-            Handler(Looper.getMainLooper()).postDelayed({
+            lifecycleScope.launch {
+                delay(3000)
                 checkAndRequestPermissions()
-            }, 3000)
+            }
         }
     }
 
@@ -159,6 +176,16 @@ class LauncherActivity : ComponentActivity() {
                 Toast.makeText(this, "Open Settings > Apps > Default apps > Home app", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    /**
+     * Called when user presses system home button while launcher is already open.
+     * This triggers scrolling to the designated home page.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        Log.d(TAG, "onNewIntent — home button pressed, emitting go-home event")
+        _homeButtonPressed.value = System.currentTimeMillis()
     }
 
     override fun onDestroy() {

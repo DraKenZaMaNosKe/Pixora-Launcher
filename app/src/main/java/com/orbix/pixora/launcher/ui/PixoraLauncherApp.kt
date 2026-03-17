@@ -146,6 +146,9 @@ fun PixoraLauncherApp(
                     onSetAsLauncherBg = { path ->
                         homeViewModel.setBackgroundFile(path)
                     },
+                    onApplyCinematicLayout = {
+                        homeViewModel.applyCinematicLayout()
+                    },
                 )
             }
         }

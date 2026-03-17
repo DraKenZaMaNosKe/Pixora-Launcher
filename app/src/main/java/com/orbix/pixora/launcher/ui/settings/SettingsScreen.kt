@@ -36,6 +36,7 @@ fun SettingsScreen(
     val showEqualizer by viewModel.showEqualizer.collectAsState()
     val showBatteryRing by viewModel.showBatteryRing.collectAsState()
     val showSystemRings by viewModel.showSystemRings.collectAsState()
+    val showAmbientParticles by viewModel.showAmbientParticles.collectAsState()
     val isCapturing by AudioCaptureService.isCapturing.collectAsState()
 
     Box(
@@ -100,6 +101,12 @@ fun SettingsScreen(
                 subtitle = "RAM & Storage usage indicators",
                 checked = showSystemRings,
                 onCheckedChange = { viewModel.setEffect(EffectKeys.SYSTEM_RINGS, it) },
+            )
+            SettingsToggle(
+                title = "Ambient Particles",
+                subtitle = "Floating particles on home screen",
+                checked = showAmbientParticles,
+                onCheckedChange = { viewModel.setEffect(EffectKeys.AMBIENT_PARTICLES, it) },
             )
 
             Spacer(modifier = Modifier.height(24.dp))

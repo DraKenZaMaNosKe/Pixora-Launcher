@@ -8,12 +8,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.orbix.pixora.launcher.data.models.AppInfo
 import com.orbix.pixora.launcher.service.AppsRepository
+import com.orbix.pixora.launcher.service.StoryManager
 import com.orbix.pixora.launcher.ui.EffectKeys
 import com.orbix.pixora.launcher.ui.pixoraDataStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -63,6 +65,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val showBatteryRing: StateFlow<Boolean> = _showBatteryRing
     private val _showSystemRings = MutableStateFlow(true)
     val showSystemRings: StateFlow<Boolean> = _showSystemRings
+    private val _showAmbientParticles = MutableStateFlow(false)
+    val showAmbientParticles: StateFlow<Boolean> = _showAmbientParticles
 
     companion object {
         val KEY_BACKGROUND = stringPreferencesKey("home_background")
@@ -85,6 +89,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** In-memory cache of home page per wallpaper */
     private var allHomePages: MutableMap<String, Int> = mutableMapOf()
+
+    /** Serialize layout saves to avoid race conditions */
+    private val layoutSaveMutex = kotlinx.coroutines.sync.Mutex()
 
     init {
         loadApps()
@@ -120,9 +127,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Get the layout key for the current wallpaper.
+     * For stories, all frames share one layout keyed by "story:{id}".
+     */
+    private fun getLayoutKey(): String {
+        val story = StoryManager.activeStory.value
+        return if (story != null) "story:${story.id}" else _backgroundUri.value
+    }
+
     /** Apply the saved slots for the current wallpaper, or default to alphabetical */
     private fun applySavedSlotsForCurrentWallpaper() {
-        val uri = _backgroundUri.value
+        val uri = getLayoutKey()
         val saved = allLayouts[uri]?.toMutableList()
         // Clean empty leading/trailing pages from saved data
         if (saved != null) {
@@ -135,11 +151,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             // Save cleaned version back
             if (saved != allLayouts[uri]) {
                 allLayouts[uri] = saved
-                viewModelScope.launch {
-                    dataStore.edit { it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts) }
-                }
+                persistLayouts()
             }
         }
+        hasSavedLayout = saved != null
         savedSlots = saved ?: emptyList()
         _homePage.value = allHomePages[uri] ?: 0
         Log.d("PixoraGrid", "Applying layout for '$uri': ${if (saved != null) "${saved.filterNotNull().size} apps" else "default alphabetical"}, homePage=${_homePage.value}")
@@ -158,6 +173,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectRoom(roomId: String) {
         val uri = "asset:$roomId"
+        // User manually chose a room — deactivate any active story
+        deactivateStoryIfNeeded()
         switchWallpaper(uri)
     }
 
@@ -166,7 +183,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             uriOrPath.startsWith("asset:") || uriOrPath.startsWith("file:") || uriOrPath.startsWith("pano:") -> uriOrPath
             else -> "file:$uriOrPath"
         }
+        // If this is NOT coming from a story frame change, deactivate the story
+        if (StoryManager.activeStory.value != null) {
+            val storyPath = StoryManager.currentFramePath.value
+            val isFromStory = storyPath != null && uri == "pano:$storyPath"
+            if (!isFromStory) {
+                deactivateStoryIfNeeded()
+            }
+        }
         switchWallpaper(uri)
+    }
+
+    private fun deactivateStoryIfNeeded() {
+        if (StoryManager.activeStory.value != null) {
+            viewModelScope.launch {
+                StoryManager.deactivate(getApplication())
+                Log.d("PixoraGrid", "Story deactivated — user changed wallpaper manually")
+            }
+        }
     }
 
     /** Switch wallpaper and load its associated icon layout */
@@ -182,6 +216,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private var savedSlots: List<String?> = emptyList()
 
+    /** Whether the current wallpaper has an explicitly saved layout (even if empty) */
+    private var hasSavedLayout: Boolean = false
+
     /** Build the grid from saved slots + installed apps, pad to full pages */
     private fun refreshGrid() {
         val installed = _installedApps.value.map { it.packageName }
@@ -190,16 +227,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val slots: MutableList<String?>
 
-        if (savedSlots.isEmpty()) {
-            // No saved order — alphabetical
+        if (!hasSavedLayout && savedSlots.isEmpty()) {
+            // No saved layout at all — default to alphabetical
             slots = installed.toMutableList<String?>()
-        } else {
-            // Start from saved, clean uninstalled
+        } else if (hasSavedLayout) {
+            // Has an explicit saved layout — respect it (even if mostly empty)
             slots = savedSlots.map { pkg ->
                 if (pkg != null && pkg in installedSet) pkg else null
             }.toMutableList()
 
-            // Add new apps not in saved slots
+            // Only auto-add apps that were NEWLY INSTALLED (not in any slot, even null ones)
+            // Don't fill cleared slots — user intentionally cleared them
+        } else {
+            // savedSlots non-empty from a previous operation in this session
+            slots = savedSlots.map { pkg ->
+                if (pkg != null && pkg in installedSet) pkg else null
+            }.toMutableList()
+
             val inSlots = slots.filterNotNull().toSet()
             val newApps = installed.filter { it !in inSlots }
             for (app in newApps) {
@@ -241,12 +285,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun saveGrid(slots: List<String?>) {
         _gridSlots.value = slots
         savedSlots = slots
-        // Save associated with current wallpaper
-        val uri = _backgroundUri.value
+        hasSavedLayout = true
+        // Save associated with current wallpaper (or story ID)
+        val uri = getLayoutKey()
         allLayouts[uri] = slots
-        viewModelScope.launch {
-            dataStore.edit { it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts) }
-        }
+        persistLayouts()
         Log.d("PixoraGrid", "Saved layout for '$uri'")
     }
 
@@ -434,14 +477,58 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Reset to alphabetical order (current wallpaper only) */
+    /** Persist all layouts and home pages to DataStore (mutex-guarded) */
+    private fun persistLayouts() {
+        viewModelScope.launch {
+            layoutSaveMutex.withLock {
+                dataStore.edit {
+                    it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts)
+                    it[KEY_HOME_PAGES] = gson.toJson(allHomePages)
+                }
+                Log.d("PixoraGrid", "Persisted ${allLayouts.size} layouts, ${allHomePages.size} home pages")
+            }
+        }
+    }
+
     fun resetAppOrder() {
         savedSlots = emptyList()
-        val uri = _backgroundUri.value
+        hasSavedLayout = false
+        val uri = getLayoutKey()
         allLayouts.remove(uri)
-        viewModelScope.launch {
-            dataStore.edit { it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts) }
-        }
+        persistLayouts()
         refreshGrid()
+    }
+
+    /**
+     * Generate a cinematic layout for stories: icons only in the bottom 2 rows (slots 8-15)
+     * of each page, leaving the top area clear for panoramic art.
+     */
+    fun applyCinematicLayout() {
+        val installed = _installedApps.value.map { it.packageName }
+        if (installed.isEmpty()) return
+
+        val slots = mutableListOf<String?>()
+        var appIdx = 0
+
+        // Fill pages: top 8 slots null (empty), bottom 8 slots with apps
+        while (appIdx < installed.size) {
+            // Top 2 rows empty (8 slots)
+            repeat(APPS_PER_PAGE / 2) { slots.add(null) }
+            // Bottom 2 rows with apps (8 slots)
+            repeat(APPS_PER_PAGE / 2) {
+                if (appIdx < installed.size) {
+                    slots.add(installed[appIdx++])
+                } else {
+                    slots.add(null)
+                }
+            }
+        }
+
+        // Pad to full pages
+        while (slots.size % APPS_PER_PAGE != 0) slots.add(null)
+
+        Log.d("PixoraGrid", "Cinematic layout: ${installed.size} apps in ${slots.size / APPS_PER_PAGE} pages (bottom-half only)")
+        saveGrid(slots)
     }
 
     fun enterEditMode() { _isEditMode.value = true }
@@ -450,11 +537,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Set a page as the home page (launcher opens here) */
     fun setHomePage(pageIndex: Int) {
         _homePage.value = pageIndex
-        val uri = _backgroundUri.value
+        val uri = getLayoutKey()
         allHomePages[uri] = pageIndex
-        viewModelScope.launch {
-            dataStore.edit { it[KEY_HOME_PAGES] = gson.toJson(allHomePages) }
-        }
+        persistLayouts()
         Log.d("PixoraGrid", "Set home page to $pageIndex for '$uri'")
     }
 
@@ -515,6 +600,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _showEqualizer.value = prefs[EffectKeys.EQUALIZER] ?: true
             _showBatteryRing.value = prefs[EffectKeys.BATTERY_RING] ?: true
             _showSystemRings.value = prefs[EffectKeys.SYSTEM_RINGS] ?: true
+            _showAmbientParticles.value = prefs[EffectKeys.AMBIENT_PARTICLES] ?: false
         }
     }
 
@@ -526,8 +612,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 EffectKeys.EQUALIZER -> _showEqualizer.value = enabled
                 EffectKeys.BATTERY_RING -> _showBatteryRing.value = enabled
                 EffectKeys.SYSTEM_RINGS -> _showSystemRings.value = enabled
+                EffectKeys.AMBIENT_PARTICLES -> _showAmbientParticles.value = enabled
             }
         }
+    }
+
+    // ── Home button event ──────────────────────────────────
+    private val _goHomeEvent = MutableStateFlow(0L)
+    val goHomeEvent: StateFlow<Long> = _goHomeEvent
+
+    /** Called when user presses system home button */
+    fun triggerGoHome() {
+        _isEditMode.value = false
+        _isDrawerOpen.value = false
+        _goHomeEvent.value = System.currentTimeMillis()
     }
 
     fun openDrawer() { _isDrawerOpen.value = true }

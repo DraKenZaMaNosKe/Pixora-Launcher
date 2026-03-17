@@ -1,9 +1,16 @@
 package com.orbix.pixora.launcher.ui.home
 
+import android.content.Intent
 import android.graphics.BitmapFactory
+import android.provider.AlarmClock
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -15,6 +22,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -37,16 +45,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,7 +70,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Size as CoilSize
+import com.orbix.pixora.launcher.LauncherActivity
 import com.orbix.pixora.launcher.data.models.AppInfo
+import com.orbix.pixora.launcher.service.StoryManager
 import com.orbix.pixora.launcher.ui.components.*
 import com.orbix.pixora.launcher.ui.drawer.AppDrawer
 import com.orbix.pixora.launcher.ui.home.HomeViewModel.Companion.APPS_PER_PAGE
@@ -80,8 +98,22 @@ fun HomeScreen(
     val isEditMode by viewModel.isEditMode.collectAsState()
     val gridSlots by viewModel.gridSlots.collectAsState()
     val homePage by viewModel.homePage.collectAsState()
+    val showAmbientParticles by viewModel.showAmbientParticles.collectAsState()
+
+    // Story state
+    val activeStory by StoryManager.activeStory.collectAsState()
+    val storyCaption by StoryManager.currentCaption.collectAsState()
+    val storyFramePath by StoryManager.currentFramePath.collectAsState()
+
+    // When story frame changes, update background to panoramic
+    LaunchedEffect(storyFramePath) {
+        if (activeStory != null && storyFramePath != null) {
+            viewModel.setBackgroundFile("pano:$storyFramePath")
+        }
+    }
 
     val scope = rememberCoroutineScope()
+    val view = LocalView.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     val dockApps = remember(dockPackages, apps) {
@@ -106,6 +138,15 @@ fun HomeScreen(
     LaunchedEffect(homePage, appPages.size) {
         if (homePage in 0 until pageCount && pagerState.currentPage == 0 && homePage > 0) {
             pagerState.scrollToPage(homePage)
+        }
+    }
+
+    // System home button pressed — scroll to home page, close drawer/edit mode
+    val homeButtonEvent by LauncherActivity.homeButtonPressed.collectAsState()
+    LaunchedEffect(homeButtonEvent) {
+        if (homeButtonEvent > 0 && homePage in 0 until pageCount) {
+            viewModel.triggerGoHome()
+            pagerState.animateScrollToPage(homePage)
         }
     }
 
@@ -146,6 +187,18 @@ fun HomeScreen(
         }
     }
 
+    // Glow dots state — managed here so touch observation doesn't block the pager
+    val glowDots = remember { mutableStateListOf<GlowDot>() }
+
+    // Cleanup expired dots
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(100)
+            val now = System.currentTimeMillis()
+            glowDots.removeAll { now - it.startTime > 900 }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -159,6 +212,26 @@ fun HomeScreen(
                 detectTapGestures(
                     onLongPress = { viewModel.enterEditMode() }
                 )
+            }
+            // Observe ALL touches at Initial pass for glow effect — does NOT consume
+            .pointerInput(showTouchGlow) {
+                if (!showTouchGlow) return@pointerInput
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        event.changes.forEach { change ->
+                            if (change.pressed && !change.previousPressed) {
+                                glowDots.add(
+                                    GlowDot(
+                                        position = change.position,
+                                        startTime = System.currentTimeMillis(),
+                                        color = glowColor,
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
             }
     ) {
         val context = LocalContext.current
@@ -177,7 +250,7 @@ fun HomeScreen(
             Image(painter = bgPainter, contentDescription = "Background", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
 
-        if (showTouchGlow) { TouchGlowOverlay(glowColor = glowColor) }
+        if (showAmbientParticles) { AmbientParticlesOverlay(glowColor = glowColor) }
 
         // Home screen pages
         HorizontalPager(
@@ -199,7 +272,10 @@ fun HomeScreen(
                         slots = pageSlots,
                         appsMap = appsMap,
                         isEditMode = isEditMode,
-                        onAppClick = { pkg -> viewModel.launchApp(pkg) },
+                        onAppClick = { pkg ->
+                            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                            viewModel.launchApp(pkg)
+                        },
                         onLongPress = { viewModel.enterEditMode() },
                         onMove = { from, to ->
                             viewModel.moveApp(pageOffset + from, pageOffset + to)
@@ -237,109 +313,110 @@ fun HomeScreen(
             }
         }
 
+        // Touch glow renderer ON TOP of pager — pure renderer, no touch handling
+        if (showTouchGlow && glowDots.isNotEmpty()) {
+            TouchGlowRenderer(dots = glowDots)
+        }
+
         // Edit mode toolbar
         var showClearDialog by remember { mutableStateOf(false) }
         if (isEditMode) {
-            Row(
+            // Glassmorphism edit toolbar
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(top = 8.dp, start = 16.dp, end = 16.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(top = 8.dp, start = 12.dp, end = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // Clear all button
+                // Top row: action buttons
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color.Red.copy(alpha = 0.5f))
-                        .clickable { showClearDialog = true }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(
-                        Icons.Default.DeleteSweep,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = "Clear",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.7f),
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Auto-reorganize button
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .clickable { viewModel.resetAppOrder() }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = "Auto-sort",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.7f),
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Set as Home button
-                val isCurrentHome = pagerState.currentPage == homePage
-                Row(
-                    modifier = Modifier
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(20.dp))
                         .background(
-                            if (isCurrentHome) Color(0xFF7C4DFF).copy(alpha = 0.7f)
-                            else Color.Black.copy(alpha = 0.6f)
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(0xFF0A0A0F).copy(alpha = 0.85f),
+                                    Color(0xFF141420).copy(alpha = 0.85f),
+                                )
+                            )
                         )
-                        .clickable {
-                            viewModel.setHomePage(pagerState.currentPage)
-                        }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.horizontalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.08f),
+                                    Color(0xFF7C4DFF).copy(alpha = 0.2f),
+                                    Color.White.copy(alpha = 0.08f),
+                                )
+                            ),
+                            shape = RoundedCornerShape(20.dp),
+                        )
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Icon(
-                        Icons.Default.Home,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(16.dp),
+                    // Clear
+                    EditToolbarButton(
+                        icon = Icons.Default.DeleteSweep,
+                        label = "Clear",
+                        tintColor = Color(0xFFFF5252),
+                        onClick = { showClearDialog = true },
                     )
-                    Text(
-                        text = if (isCurrentHome) "Home" else "Set Home",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.7f),
+
+                    // Auto-sort
+                    EditToolbarButton(
+                        icon = Icons.Default.Refresh,
+                        label = "Sort",
+                        tintColor = Color(0xFF00E5FF),
+                        onClick = { viewModel.resetAppOrder() },
                     )
+
+                    // Set Home
+                    val isCurrentHome = pagerState.currentPage == homePage
+                    EditToolbarButton(
+                        icon = Icons.Default.Home,
+                        label = if (isCurrentHome) "Home" else "Set Home",
+                        tintColor = if (isCurrentHome) Color(0xFF69F0AE) else Color.White.copy(alpha = 0.6f),
+                        onClick = { viewModel.setHomePage(pagerState.currentPage) },
+                    )
+
+                    // Done button — prominent
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(Color(0xFF7C4DFF), Color(0xFF651FFF))
+                                )
+                            )
+                            .clickable {
+                                view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                viewModel.exitEditMode()
+                            }
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                text = "Done",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                            )
+                        }
+                    }
                 }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Done button
-                Text(
-                    text = "Done",
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xFF7C4DFF).copy(alpha = 0.7f))
-                        .clickable { viewModel.exitEditMode() }
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
-                )
             }
         }
 
@@ -370,16 +447,91 @@ fun HomeScreen(
 
         // Hide overlays & buttons in edit mode for a clean editing experience
         if (!isEditMode) {
-            // Clock overlay
+            // Clock overlay — double-tap opens alarm/clock app
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 48.dp)
-                    .statusBarsPadding(),
+                    .statusBarsPadding()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                try {
+                                    val intent = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) { }
+                            }
+                        )
+                    },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(text = currentTime, fontSize = 56.sp, fontWeight = FontWeight.Light, color = Color.White)
                 Text(text = currentDate, fontSize = 16.sp, color = Color.White.copy(alpha = 0.7f))
+
+                // Story caption — timed: 8s visible every 3 minutes
+                if (activeStory != null && storyCaption.isNotBlank()) {
+                    var captionVisible by remember { mutableStateOf(true) }
+                    LaunchedEffect(storyCaption) {
+                        // Show caption on each new caption / frame change
+                        captionVisible = true
+                        kotlinx.coroutines.delay(8000)
+                        captionVisible = false
+                    }
+                    // Also show periodically (every 3 minutes)
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            kotlinx.coroutines.delay(180_000) // 3 min
+                            if (storyCaption.isNotBlank()) {
+                                captionVisible = true
+                                kotlinx.coroutines.delay(8000)
+                                captionVisible = false
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    AnimatedVisibility(
+                        visible = captionVisible,
+                        enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(800)),
+                        exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(1200)),
+                    ) {
+                        val storyGlow = try {
+                            Color(android.graphics.Color.parseColor(activeStory!!.glowColor))
+                        } catch (_: Exception) { Color(0xFF7C4DFF) }
+
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 24.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color.Black.copy(alpha = 0.6f),
+                                            Color(0xFF0A0A0F).copy(alpha = 0.7f),
+                                        )
+                                    )
+                                )
+                                .border(
+                                    1.dp,
+                                    storyGlow.copy(alpha = 0.2f),
+                                    RoundedCornerShape(16.dp),
+                                )
+                                .padding(horizontal = 20.dp, vertical = 12.dp),
+                        ) {
+                            // Rich text — highlight capitalized proper nouns
+                            Text(
+                                text = buildStoryAnnotatedString(storyCaption, storyGlow),
+                                fontSize = 14.sp,
+                                lineHeight = 22.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
             }
 
             if (showBatteryRing) {
@@ -522,6 +674,47 @@ private fun PanoramicBackground(painter: Painter, scrollFraction: Float, modifie
     )
 }
 
+@Composable
+private fun EditToolbarButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tintColor: Color,
+    onClick: () -> Unit,
+) {
+    val view = LocalView.current
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable {
+                view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                onClick()
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(tintColor.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = tintColor,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            color = Color.White.copy(alpha = 0.7f),
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DockAppIcon(app: AppInfo, onClick: () -> Unit, onLongClick: () -> Unit) {
@@ -535,5 +728,56 @@ private fun DockAppIcon(app: AppInfo, onClick: () -> Unit, onLongClick: () -> Un
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(text = app.label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * Build rich AnnotatedString for story captions.
+ * Highlights proper nouns (capitalized words 2+ chars), quoted text, and ALL CAPS words.
+ */
+private fun buildStoryAnnotatedString(text: String, accentColor: Color): AnnotatedString {
+    return buildAnnotatedString {
+        val words = text.split(" ")
+        val secondaryColor = Color(
+            red = (accentColor.blue * 0.5f + accentColor.red * 0.5f).coerceIn(0f, 1f),
+            green = (accentColor.green * 0.8f + 0.2f).coerceIn(0f, 1f),
+            blue = (accentColor.red * 0.3f + accentColor.blue * 0.7f).coerceIn(0f, 1f),
+        )
+
+        for ((i, word) in words.withIndex()) {
+            if (i > 0) append(" ")
+
+            val cleanWord = word.trimEnd('.', ',', '!', '?', ';', ':', '"', '\'')
+
+            when {
+                // ALL CAPS words (like "GOKU", "SPIRIT BOMB") — bold + accent
+                cleanWord.length >= 2 && cleanWord.all { it.isUpperCase() || !it.isLetter() } && cleanWord.any { it.isLetter() } -> {
+                    withStyle(SpanStyle(
+                        color = accentColor,
+                        fontWeight = FontWeight.ExtraBold,
+                    )) { append(word) }
+                }
+                // Proper nouns: capitalized, 2+ letters, not start of sentence indicator
+                cleanWord.length >= 2 && cleanWord[0].isUpperCase() && cleanWord.drop(1).any { it.isLowerCase() } -> {
+                    withStyle(SpanStyle(
+                        color = secondaryColor,
+                        fontWeight = FontWeight.SemiBold,
+                    )) { append(word) }
+                }
+                // Quoted text
+                word.startsWith('"') || word.startsWith('\'') || word.startsWith('\u201C') -> {
+                    withStyle(SpanStyle(
+                        color = accentColor.copy(alpha = 0.9f),
+                        fontStyle = FontStyle.Italic,
+                    )) { append(word) }
+                }
+                // Normal text
+                else -> {
+                    withStyle(SpanStyle(
+                        color = Color.White.copy(alpha = 0.85f),
+                    )) { append(word) }
+                }
+            }
+        }
     }
 }

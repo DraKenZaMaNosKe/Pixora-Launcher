@@ -47,8 +47,12 @@ class AppsRepository(private val context: Context) {
     private fun drawableToBytes(drawable: Drawable): ByteArray {
         val bitmap = drawableToBitmap(drawable, 96)
         val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-        return stream.toByteArray()
+        // WEBP is ~40% smaller than PNG for app icons
+        @Suppress("DEPRECATION")
+        bitmap.compress(Bitmap.CompressFormat.WEBP, 85, stream)
+        val result = stream.toByteArray()
+        bitmap.recycle()
+        return result
     }
 
     private fun drawableToBitmap(drawable: Drawable, size: Int): Bitmap {
