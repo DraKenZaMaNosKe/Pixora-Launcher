@@ -4,7 +4,11 @@
       "Bash(adb devices:*)",
       "Bash(adb:*)",
       "Bash(du:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(mkdir -p /tmp/daycycle)",
+      "Bash(cp /tmp/daycycle/dc_pixel_planet_afternoon.webp /tmp/daycycle/dc_pixel_planet_preview.webp)",
+      "Bash(cp /tmp/daycycle/dc_pixel_scifi_evening.webp /tmp/daycycle/dc_pixel_scifi_preview.webp)",
+      "Read(//tmp/**)"
     ]
   }
 }

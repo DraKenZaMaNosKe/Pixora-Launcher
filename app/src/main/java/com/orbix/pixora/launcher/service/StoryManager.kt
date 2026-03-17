@@ -159,11 +159,23 @@ object StoryManager {
     /** Deactivate the current story and cancel scheduling */
     suspend fun deactivate(context: Context) {
         Log.d(TAG, "Deactivating story")
-        context.pixoraDataStore.edit { prefs ->
-            prefs.remove(KEY_ACTIVE_STORY)
-            prefs.remove(KEY_CURRENT_FRAME)
-            prefs.remove(KEY_FRAME_PATHS)
-            prefs.remove(KEY_ACTIVATED_AT)
+        // Clean up downloaded frame files
+        val prefs = context.pixoraDataStore.data.first()
+        val pathsJson = prefs[KEY_FRAME_PATHS]
+        if (pathsJson != null) {
+            try {
+                val paths: List<String> = gson.fromJson(pathsJson, object : TypeToken<List<String>>() {}.type)
+                for (path in paths) {
+                    try { java.io.File(path).delete() } catch (_: Exception) {}
+                }
+                Log.d(TAG, "Cleaned up ${paths.size} frame files")
+            } catch (_: Exception) {}
+        }
+        context.pixoraDataStore.edit { p ->
+            p.remove(KEY_ACTIVE_STORY)
+            p.remove(KEY_CURRENT_FRAME)
+            p.remove(KEY_FRAME_PATHS)
+            p.remove(KEY_ACTIVATED_AT)
         }
         _activeStory.value = null
         _currentFrameIndex.value = 0

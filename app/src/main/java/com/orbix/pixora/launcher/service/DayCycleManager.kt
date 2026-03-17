@@ -132,8 +132,12 @@ object DayCycleManager {
         true
     }
 
-    suspend fun deactivate(context: Context) {
+    suspend fun deactivate(context: Context, cleanupFiles: Boolean = true) {
         Log.d(TAG, "Deactivating day cycle")
+        // Clean up downloaded images to free space
+        if (cleanupFiles) {
+            cleanupThemeFiles(cachedPaths.values.toList())
+        }
         context.pixoraDataStore.edit { prefs ->
             prefs.remove(KEY_ACTIVE_THEME)
             prefs.remove(KEY_THEME_PATHS)
@@ -141,6 +145,21 @@ object DayCycleManager {
         _activeTheme.value = null
         _currentImagePath.value = null
         cachedPaths = emptyMap()
+    }
+
+    /** Delete downloaded theme image files */
+    private fun cleanupThemeFiles(paths: List<String>) {
+        for (path in paths) {
+            try {
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    file.delete()
+                    Log.d(TAG, "Cleaned up: ${file.name}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to cleanup: $path", e)
+            }
+        }
     }
 
     /** Check if wallpaper needs to change (called periodically) */

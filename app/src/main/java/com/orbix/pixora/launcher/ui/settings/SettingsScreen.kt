@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MusicNote
@@ -346,6 +347,43 @@ fun SettingsScreen(
                         backupList = BackupService.listBackups(context)
                         isLoadingBackups = false
                         showImportDialog = true
+                    }
+                },
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Storage section
+            SectionHeader("Storage")
+
+            var cacheSize by remember { mutableStateOf("Calculating...") }
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val wallpapersDir = java.io.File(context.filesDir, "wallpapers")
+                    val roomsDir = java.io.File(context.filesDir, "icon_rooms")
+                    val totalBytes = (wallpapersDir.walkTopDown().sumOf { it.length() }) +
+                        (roomsDir.walkTopDown().sumOf { it.length() })
+                    cacheSize = when {
+                        totalBytes < 1024 -> "$totalBytes B"
+                        totalBytes < 1024 * 1024 -> "${totalBytes / 1024} KB"
+                        else -> "${"%.1f".format(totalBytes / (1024.0 * 1024.0))} MB"
+                    }
+                }
+            }
+
+            SettingsActionButton(
+                icon = Icons.Default.Delete,
+                title = "Clear Image Cache",
+                subtitle = "Downloaded wallpapers & rooms: $cacheSize",
+                accentColor = Color(0xFFFF5252),
+                onClick = {
+                    scope.launch {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            java.io.File(context.filesDir, "wallpapers").deleteRecursively()
+                            java.io.File(context.filesDir, "icon_rooms").deleteRecursively()
+                        }
+                        cacheSize = "0 B"
+                        snackbarHostState.showSnackbar("Cache cleared")
                     }
                 },
             )
