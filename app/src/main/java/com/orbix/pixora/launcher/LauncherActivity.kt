@@ -27,6 +27,8 @@ import androidx.core.content.ContextCompat
 import com.orbix.pixora.launcher.audio.AudioCaptureService
 import com.orbix.pixora.launcher.audio.AudioSessionTracker
 import com.orbix.pixora.launcher.audio.SoundEngine
+import com.orbix.pixora.launcher.ui.theme.ThemeManager
+import com.orbix.pixora.launcher.service.DayCycleManager
 import com.orbix.pixora.launcher.service.StoryManager
 import com.orbix.pixora.launcher.ui.PixoraLauncherApp
 import com.orbix.pixora.launcher.ui.theme.PixoraTheme
@@ -89,6 +91,8 @@ class LauncherActivity : ComponentActivity() {
         lifecycleScope.launch {
             StoryManager.loadState(applicationContext)
             SoundEngine.loadState(applicationContext)
+            DayCycleManager.loadState(applicationContext)
+            ThemeManager.loadState(applicationContext)
         }
 
         setContent {

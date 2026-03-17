@@ -119,6 +119,33 @@ class CatalogService(private val context: Context) {
         }
     }
 
+    suspend fun getDayCycleThemes(): List<DayCycleTheme> = withContext(Dispatchers.IO) {
+        cacheMutex.withLock {
+            // Try network
+            if (NetworkHelper.isOnline(context)) {
+                try {
+                    val json = fetchUrl(SupabaseConfig.dayCycleCatalogUrl())
+                    val catalog = gson.fromJson(json, DayCycleCatalog::class.java)
+                    File(cacheDir, "day_cycle_cache.json").writeText(json)
+                    return@withLock catalog.themes
+                } catch (e: Exception) {
+                    Log.w("CatalogService", "Day cycle fetch failed: ${e.message}")
+                }
+            }
+            // Fallback to disk cache
+            try {
+                val file = File(cacheDir, "day_cycle_cache.json")
+                if (file.exists()) {
+                    val catalog = gson.fromJson(file.readText(), DayCycleCatalog::class.java)
+                    return@withLock catalog.themes
+                }
+            } catch (e: Exception) {
+                Log.w("CatalogService", "Day cycle cache read failed: ${e.message}")
+            }
+            emptyList()
+        }
+    }
+
     private fun fetchUrl(url: String): String {
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()

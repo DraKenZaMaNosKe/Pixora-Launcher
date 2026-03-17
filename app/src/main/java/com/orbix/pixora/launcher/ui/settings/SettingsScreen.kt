@@ -1,9 +1,11 @@
 package com.orbix.pixora.launcher.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -22,12 +24,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import com.orbix.pixora.launcher.audio.AudioCaptureService
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import com.orbix.pixora.launcher.audio.SoundEngine
+import com.orbix.pixora.launcher.ui.theme.ThemeManager
+import com.orbix.pixora.launcher.ui.theme.Themes
 import com.orbix.pixora.launcher.service.BackupService
 import com.orbix.pixora.launcher.ui.EffectKeys
 import com.orbix.pixora.launcher.ui.home.HomeViewModel
@@ -48,6 +55,7 @@ fun SettingsScreen(
     val isCapturing by AudioCaptureService.isCapturing.collectAsState()
     val soundsEnabled by SoundEngine.enabled.collectAsState()
     val soundTheme by SoundEngine.currentTheme.collectAsState()
+    val uiTheme by ThemeManager.current.collectAsState()
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -92,6 +100,59 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Theme section
+            SectionHeader("App Theme")
+            Spacer(modifier = Modifier.height(4.dp))
+
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                items(Themes.ALL) { theme ->
+                    val isSelected = theme.id == uiTheme.id
+                    val borderColor by animateColorAsState(
+                        if (isSelected) theme.primary else Color.Transparent,
+                        tween(200), label = "theme_border"
+                    )
+                    Column(
+                        modifier = Modifier
+                            .width(72.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) theme.surface else Color(0xFF1A1A2E))
+                            .border(2.dp, borderColor, RoundedCornerShape(12.dp))
+                            .clickable {
+                                ThemeManager.setTheme(context, theme)
+                                SoundEngine.playTap()
+                            }
+                            .padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        // Color preview circles
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Box(Modifier.size(16.dp).clip(CircleShape).background(theme.primary))
+                            Box(Modifier.size(16.dp).clip(CircleShape).background(theme.secondary))
+                            Box(Modifier.size(16.dp).clip(CircleShape).background(theme.background))
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = theme.emoji,
+                            fontSize = 16.sp,
+                        )
+                        Text(
+                            text = theme.name,
+                            fontSize = 9.sp,
+                            color = if (isSelected) theme.primary else Color.White.copy(alpha = 0.5f),
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            maxLines = 1,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Effects section
             SectionHeader("Effects")

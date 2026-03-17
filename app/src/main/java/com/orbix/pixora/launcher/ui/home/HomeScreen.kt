@@ -83,8 +83,10 @@ import com.orbix.pixora.launcher.ui.tutorial.TutorialManager
 import com.orbix.pixora.launcher.ui.tutorial.TutorialSteps
 import com.orbix.pixora.launcher.data.models.AppInfo
 import com.orbix.pixora.launcher.data.models.IconRoom
+import com.orbix.pixora.launcher.service.DayCycleManager
 import com.orbix.pixora.launcher.service.IconRoomRepository
 import com.orbix.pixora.launcher.service.StoryManager
+import com.orbix.pixora.launcher.ui.theme.ThemeManager
 import com.orbix.pixora.launcher.ui.components.*
 import com.orbix.pixora.launcher.ui.drawer.AppDrawer
 import com.orbix.pixora.launcher.ui.home.HomeViewModel.Companion.APPS_PER_PAGE
@@ -133,7 +135,8 @@ fun HomeScreen(
         dockPackages.mapNotNull { pkg -> apps.find { it.packageName == pkg } }
     }
 
-    val glowColor = Color(0xFF7C4DFF)
+    val uiTheme by ThemeManager.current.collectAsState()
+    val glowColor = uiTheme.glowColor
 
     val appsMap = remember(apps) { apps.associateBy { it.packageName } }
 
@@ -209,6 +212,23 @@ fun HomeScreen(
         }
     }
     val isPanoramic = backgroundUri.startsWith("asset:") || backgroundUri.startsWith("pano:")
+
+    // Day cycle: check every minute and update wallpaper if period changed
+    val dayCycleTheme by DayCycleManager.activeTheme.collectAsState()
+    val dayCycleImagePath by DayCycleManager.currentImagePath.collectAsState()
+    LaunchedEffect(dayCycleTheme) {
+        if (dayCycleTheme != null) {
+            while (true) {
+                DayCycleManager.checkAndUpdate(bgContext)
+                kotlinx.coroutines.delay(60_000)
+            }
+        }
+    }
+    LaunchedEffect(dayCycleImagePath) {
+        if (dayCycleTheme != null && dayCycleImagePath != null) {
+            viewModel.setBackgroundFile("pano:$dayCycleImagePath")
+        }
+    }
 
     val scrollFraction by remember {
         derivedStateOf {
@@ -380,7 +400,7 @@ fun HomeScreen(
                             brush = Brush.horizontalGradient(
                                 listOf(
                                     Color.White.copy(alpha = 0.08f),
-                                    Color(0xFF7C4DFF).copy(alpha = 0.2f),
+                                    uiTheme.primary.copy(alpha = 0.2f),
                                     Color.White.copy(alpha = 0.08f),
                                 )
                             ),
@@ -402,7 +422,7 @@ fun HomeScreen(
                     EditToolbarButton(
                         icon = Icons.Default.Refresh,
                         label = "Sort",
-                        tintColor = Color(0xFF00E5FF),
+                        tintColor = uiTheme.secondary,
                         onClick = { viewModel.resetAppOrder() },
                     )
 
@@ -421,7 +441,7 @@ fun HomeScreen(
                             .clip(RoundedCornerShape(16.dp))
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(Color(0xFF7C4DFF), Color(0xFF651FFF))
+                                    listOf(uiTheme.primary, uiTheme.secondary)
                                 )
                             )
                             .clickable {
@@ -535,8 +555,8 @@ fun HomeScreen(
                         drawRoundRect(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
-                                    Color(0xFF7C4DFF).copy(alpha = 0.0f),
-                                    Color(0xFF7C4DFF).copy(alpha = 0.25f),
+                                    uiTheme.primary.copy(alpha = 0.0f),
+                                    uiTheme.primary.copy(alpha = 0.25f),
                                 ),
                                 startX = barStart,
                                 endX = barStart + secFill,
@@ -548,7 +568,7 @@ fun HomeScreen(
                         // Main bar
                         drawRoundRect(
                             brush = Brush.horizontalGradient(
-                                colors = listOf(Color(0xFF00E5FF), Color(0xFF7C4DFF)),
+                                colors = listOf(uiTheme.secondary, uiTheme.primary),
                                 startX = barStart,
                                 endX = barStart + secFill,
                             ),
@@ -563,7 +583,7 @@ fun HomeScreen(
                             center = Offset(barStart + secFill, secY + barH / 2),
                         )
                         drawCircle(
-                            color = Color(0xFF7C4DFF).copy(alpha = 0.4f),
+                            color = uiTheme.primary.copy(alpha = 0.4f),
                             radius = 7f,
                             center = Offset(barStart + secFill, secY + barH / 2),
                         )
@@ -598,7 +618,7 @@ fun HomeScreen(
                         // Main bar
                         drawRoundRect(
                             brush = Brush.horizontalGradient(
-                                colors = listOf(Color(0xFF00E676), Color(0xFF00E5FF)),
+                                colors = listOf(Color(0xFF00E676), uiTheme.secondary),
                                 startX = barStart,
                                 endX = barStart + msFill,
                             ),
@@ -613,7 +633,7 @@ fun HomeScreen(
                             center = Offset(barStart + msFill, msY + barH / 2),
                         )
                         drawCircle(
-                            color = Color(0xFF00E5FF).copy(alpha = 0.35f),
+                            color = uiTheme.secondary.copy(alpha = 0.35f),
                             radius = 6f,
                             center = Offset(barStart + msFill, msY + barH / 2),
                         )
@@ -662,8 +682,8 @@ fun HomeScreen(
                     ) {
                         val storyGlow = activeStory?.let { story ->
                             try { Color(android.graphics.Color.parseColor(story.glowColor)) }
-                            catch (_: Exception) { Color(0xFF7C4DFF) }
-                        } ?: Color(0xFF7C4DFF)
+                            catch (_: Exception) { uiTheme.primary }
+                        } ?: uiTheme.primary
 
                         Box(
                             modifier = Modifier
@@ -721,7 +741,7 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(24.dp)) }
                 Box(
-                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFF7C4DFF).copy(alpha = 0.5f)).clickable { SoundEngine.playDrawerOpen(); viewModel.openDrawer() },
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(uiTheme.primary.copy(alpha = 0.5f)).clickable { SoundEngine.playDrawerOpen(); viewModel.openDrawer() },
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.Apps, contentDescription = "All apps", tint = Color.White, modifier = Modifier.size(24.dp)) }
             }
@@ -767,7 +787,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF7C4DFF).copy(alpha = 0.6f))
+                        .background(uiTheme.primary.copy(alpha = 0.6f))
                         .clickable {
                             val newPage = viewModel.addPageAfter(pagerState.currentPage)
                             scope.launch { pagerState.animateScrollToPage(newPage) }

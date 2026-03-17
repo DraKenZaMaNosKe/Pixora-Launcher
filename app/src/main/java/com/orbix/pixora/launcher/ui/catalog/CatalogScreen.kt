@@ -44,7 +44,8 @@ fun CatalogScreen(
     viewModel: CatalogViewModel = viewModel(),
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Wallpapers", "Stories", "Icon Rooms")
+    val tabs = listOf("Wallpapers", "Stories", "Icon Rooms", "Day Cycle")
+    val dayCycleThemes by viewModel.dayCycleThemes.collectAsState()
 
     val wallpapers by viewModel.wallpapers.collectAsState()
     val stories by viewModel.stories.collectAsState()
@@ -115,6 +116,10 @@ fun CatalogScreen(
                             2 -> IconRoomsTab(
                                 rooms = viewModel.iconRooms,
                                 onRoomClick = onIconRoomSelected,
+                            )
+                            3 -> DayCycleTab(
+                                themes = dayCycleThemes,
+                                downloadService = viewModel.downloadServiceInstance,
                             )
                         }
                     }
@@ -545,6 +550,169 @@ private fun IconRoomCard(room: IconRoom, onClick: () -> Unit) {
                 .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
             Text("ROOM", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+    }
+}
+
+// ── Day Cycle Tab ──────────────────────────────────────────
+
+@Composable
+private fun DayCycleTab(
+    themes: List<com.orbix.pixora.launcher.service.DayCycleTheme>,
+    downloadService: com.orbix.pixora.launcher.service.DownloadService,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val activeTheme by com.orbix.pixora.launcher.service.DayCycleManager.activeTheme.collectAsState()
+    val currentPeriod by com.orbix.pixora.launcher.service.DayCycleManager.currentPeriod.collectAsState()
+
+    var isActivating by remember { mutableStateOf(false) }
+    var activatingProgress by remember { mutableStateOf("") }
+
+    if (themes.isEmpty()) {
+        EmptyState("No day cycle themes yet", "Coming soon!")
+    } else {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(1),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 80.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(themes, key = { it.id }) { theme ->
+                val isActive = activeTheme?.id == theme.id
+                val glowColor = try {
+                    Color(android.graphics.Color.parseColor(theme.glowColor))
+                } catch (_: Exception) { Color(0xFF7C4DFF) }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF141420))
+                ) {
+                    // Preview image
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(SupabaseConfig.imageUrl(theme.previewImage))
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = theme.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        // Gradient overlay
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(0.5f)
+                                .align(Alignment.BottomCenter)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.Transparent, Color(0xFF141420))
+                                    )
+                                )
+                        )
+                        // Badge
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(glowColor.copy(alpha = 0.8f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text("DAY CYCLE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        // Active indicator
+                        if (isActive) {
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(8.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF4CAF50).copy(alpha = 0.85f))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(currentPeriod.emoji, fontSize = 10.sp)
+                                Text("Active • ${currentPeriod.label}", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+
+                    // Info + action
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(theme.name, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        if (theme.description.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(theme.description, fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f))
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        // Period labels
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            com.orbix.pixora.launcher.service.DayPeriod.entries.forEach { period ->
+                                Text(
+                                    "${period.emoji} ${period.label}",
+                                    fontSize = 11.sp,
+                                    color = if (isActive && period == currentPeriod) glowColor else Color.White.copy(alpha = 0.4f),
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (isActivating) {
+                            Text(
+                                activatingProgress,
+                                fontSize = 13.sp,
+                                color = glowColor,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        } else if (isActive) {
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        com.orbix.pixora.launcher.service.DayCycleManager.deactivate(context)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                            ) {
+                                Text("Deactivate", color = Color.White)
+                            }
+                        } else {
+                            androidx.compose.material3.Button(
+                                onClick = {
+                                    isActivating = true
+                                    scope.launch {
+                                        val success = com.orbix.pixora.launcher.service.DayCycleManager.activate(
+                                            context = context,
+                                            theme = theme,
+                                            downloadService = downloadService,
+                                        ) { current, total, label ->
+                                            activatingProgress = "Downloading $label ($current/$total)..."
+                                        }
+                                        isActivating = false
+                                        activatingProgress = ""
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = glowColor),
+                            ) {
+                                Text("Activate Day Cycle", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

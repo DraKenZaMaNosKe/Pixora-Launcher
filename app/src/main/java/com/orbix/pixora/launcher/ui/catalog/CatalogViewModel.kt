@@ -7,6 +7,8 @@ import com.orbix.pixora.launcher.data.models.IconRoom
 import com.orbix.pixora.launcher.data.models.Story
 import com.orbix.pixora.launcher.data.models.Wallpaper
 import com.orbix.pixora.launcher.service.CatalogService
+import com.orbix.pixora.launcher.service.DayCycleCatalog
+import com.orbix.pixora.launcher.service.DayCycleTheme
 import com.orbix.pixora.launcher.service.DownloadService
 import com.orbix.pixora.launcher.service.WallpaperInstallService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +29,9 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val stories: StateFlow<List<Story>> = _stories
 
     val iconRooms = IconRoom.ALL
+
+    private val _dayCycleThemes = MutableStateFlow<List<DayCycleTheme>>(emptyList())
+    val dayCycleThemes: StateFlow<List<DayCycleTheme>> = _dayCycleThemes
 
     // UI state
     private val _selectedCategory = MutableStateFlow("ALL")
@@ -57,6 +62,7 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 _wallpapers.value = catalogService.getWallpapers()
                 _stories.value = catalogService.getStories()
+                _dayCycleThemes.value = catalogService.getDayCycleThemes()
             } catch (e: Exception) {
                 _error.value = e.message
             }
@@ -87,6 +93,8 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun downloadIconRoom(assetName: String): String? {
         return downloadService.copyAssetToFile(assetName)
     }
+
+    val downloadServiceInstance get() = downloadService
 
     fun clearError() { _error.value = null }
 }

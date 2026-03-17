@@ -11,4 +11,5 @@ object SupabaseConfig {
 
     /** Icon room image URL (WebP format) */
     fun iconRoomUrl(assetName: String): String = "$STORAGE_BASE/$BUCKET/icon_rooms/$assetName.webp"
+    fun dayCycleCatalogUrl(): String = "$STORAGE_BASE/$BUCKET/day_cycle_catalog.json"
 }

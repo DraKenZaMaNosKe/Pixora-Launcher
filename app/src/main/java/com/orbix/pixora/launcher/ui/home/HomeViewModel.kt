@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.orbix.pixora.launcher.data.models.AppInfo
 import com.orbix.pixora.launcher.service.AppsRepository
+import com.orbix.pixora.launcher.service.DayCycleManager
 import com.orbix.pixora.launcher.service.StoryManager
 import com.orbix.pixora.launcher.ui.EffectKeys
 import com.orbix.pixora.launcher.ui.pixoraDataStore
@@ -182,8 +183,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectRoom(roomId: String) {
         val uri = "asset:$roomId"
-        // User manually chose a room — deactivate any active story
         deactivateStoryIfNeeded()
+        deactivateDayCycleIfNeeded()
         switchWallpaper(uri)
     }
 
@@ -200,7 +201,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 deactivateStoryIfNeeded()
             }
         }
+        // If this is NOT coming from day cycle, deactivate it
+        if (DayCycleManager.activeTheme.value != null) {
+            val dcPath = DayCycleManager.currentImagePath.value
+            val isFromDayCycle = dcPath != null && uri == "pano:$dcPath"
+            if (!isFromDayCycle) {
+                deactivateDayCycleIfNeeded()
+            }
+        }
         switchWallpaper(uri)
+    }
+
+    private fun deactivateDayCycleIfNeeded() {
+        if (DayCycleManager.activeTheme.value != null) {
+            viewModelScope.launch {
+                DayCycleManager.deactivate(getApplication())
+                Log.d("PixoraGrid", "Day cycle deactivated — user changed wallpaper manually")
+            }
+        }
     }
 
     private fun deactivateStoryIfNeeded() {
