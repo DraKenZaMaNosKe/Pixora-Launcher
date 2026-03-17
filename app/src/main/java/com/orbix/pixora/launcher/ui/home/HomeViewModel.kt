@@ -70,6 +70,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _showAmbientParticles = MutableStateFlow(false)
     val showAmbientParticles: StateFlow<Boolean> = _showAmbientParticles
 
+    private val _equalizerStyle = MutableStateFlow("CLASSIC")
+    val equalizerStyle: StateFlow<String> = _equalizerStyle
+
     private val _recentApps = MutableStateFlow<List<String>>(emptyList())
     val recentApps: StateFlow<List<String>> = _recentApps
 
@@ -632,6 +635,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _showBatteryRing.value = prefs[EffectKeys.BATTERY_RING] ?: true
             _showSystemRings.value = prefs[EffectKeys.SYSTEM_RINGS] ?: true
             _showAmbientParticles.value = prefs[EffectKeys.AMBIENT_PARTICLES] ?: false
+            _equalizerStyle.value = prefs[EffectKeys.EQUALIZER_STYLE] ?: "CLASSIC"
         }
     }
 
@@ -645,6 +649,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 EffectKeys.SYSTEM_RINGS -> _showSystemRings.value = enabled
                 EffectKeys.AMBIENT_PARTICLES -> _showAmbientParticles.value = enabled
             }
+        }
+    }
+
+    fun setEqualizerStyle(style: String) {
+        _equalizerStyle.value = style
+        viewModelScope.launch {
+            dataStore.edit { it[EffectKeys.EQUALIZER_STYLE] = style }
         }
     }
 

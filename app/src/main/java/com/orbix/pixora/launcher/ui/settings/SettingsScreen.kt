@@ -68,7 +68,7 @@ fun SettingsScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0A0F))
+            .background(uiTheme.background)
             .statusBarsPadding()
     ) {
         Column(
@@ -87,14 +87,14 @@ fun SettingsScreen(
                     Icon(
                         Icons.Default.ArrowBack,
                         contentDescription = "Back",
-                        tint = Color.White,
+                        tint = uiTheme.onBackground,
                     )
                 }
                 Text(
                     text = "Settings",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = uiTheme.onBackground,
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
@@ -120,7 +120,7 @@ fun SettingsScreen(
                         modifier = Modifier
                             .width(72.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (isSelected) theme.surface else Color(0xFF1A1A2E))
+                            .background(if (isSelected) theme.surface else uiTheme.surfaceVariant)
                             .border(2.dp, borderColor, RoundedCornerShape(12.dp))
                             .clickable {
                                 ThemeManager.setTheme(context, theme)
@@ -143,7 +143,7 @@ fun SettingsScreen(
                         Text(
                             text = theme.name,
                             fontSize = 9.sp,
-                            color = if (isSelected) theme.primary else Color.White.copy(alpha = 0.5f),
+                            color = if (isSelected) theme.primary else uiTheme.onBackground.copy(alpha = 0.5f),
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             maxLines = 1,
                             textAlign = TextAlign.Center,
@@ -204,7 +204,7 @@ fun SettingsScreen(
                 Text(
                     text = "Sound Theme",
                     fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = uiTheme.onBackground.copy(alpha = 0.5f),
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
                 )
                 Row(
@@ -216,7 +216,7 @@ fun SettingsScreen(
                     SoundEngine.availableThemes.forEach { theme ->
                         val isSelected = theme == soundTheme
                         val bgColor by animateColorAsState(
-                            if (isSelected) Color(0xFF7C4DFF) else Color(0xFF1A1A2E),
+                            if (isSelected) uiTheme.primary else uiTheme.surfaceVariant,
                             tween(200), label = "theme_bg"
                         )
                         Box(
@@ -235,7 +235,7 @@ fun SettingsScreen(
                                 text = theme.replaceFirstChar { it.uppercase() },
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                                color = if (isSelected) uiTheme.onSurface else uiTheme.onSurface.copy(alpha = 0.5f),
                             )
                         }
                     }
@@ -260,7 +260,7 @@ fun SettingsScreen(
                 icon = Icons.Default.Home,
                 title = "Set as Default Launcher",
                 subtitle = "Make Pixora your home screen",
-                accentColor = Color(0xFF7C4DFF),
+                accentColor = uiTheme.primary,
                 onClick = onSetDefaultLauncher,
             )
 
@@ -326,7 +326,7 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 8.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF141420))
+                    .background(uiTheme.surface)
                     .padding(16.dp)
             ) {
                 Column {
@@ -334,19 +334,19 @@ fun SettingsScreen(
                         text = "Pixora Launcher",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
+                        color = uiTheme.onSurface,
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Version 1.0.0",
                         fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = uiTheme.onSurface.copy(alpha = 0.5f),
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Your apps live inside the art",
                         fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.4f),
+                        color = uiTheme.onSurface.copy(alpha = 0.4f),
                     )
                 }
             }
@@ -384,8 +384,8 @@ fun SettingsScreen(
         ) { data ->
             Snackbar(
                 snackbarData = data,
-                containerColor = Color(0xFF1A1A2E),
-                contentColor = Color.White,
+                containerColor = uiTheme.surfaceVariant,
+                contentColor = uiTheme.onSurface,
             )
         }
 
@@ -400,7 +400,7 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            CircularProgressIndicator(color = Color(0xFF7C4DFF))
+                            CircularProgressIndicator(color = uiTheme.primary)
                         }
                     } else if (backupList.isEmpty()) {
                         Text(
@@ -447,9 +447,9 @@ fun SettingsScreen(
                 dismissButton = {
                     TextButton(onClick = { showImportDialog = false }) { Text("Cancel") }
                 },
-                containerColor = Color(0xFF1A1A2E),
-                titleContentColor = Color.White,
-                textContentColor = Color.White.copy(alpha = 0.7f),
+                containerColor = uiTheme.surfaceVariant,
+                titleContentColor = uiTheme.onSurface,
+                textContentColor = uiTheme.onSurface.copy(alpha = 0.7f),
             )
         }
     }
@@ -457,11 +457,12 @@ fun SettingsScreen(
 
 @Composable
 private fun SectionHeader(title: String) {
+    val uiTheme by ThemeManager.current.collectAsState()
     Text(
         text = title,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
-        color = Color(0xFF7C4DFF),
+        color = uiTheme.primary,
         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
     )
 }
@@ -473,6 +474,7 @@ private fun SettingsToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    val uiTheme by ThemeManager.current.collectAsState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -483,20 +485,20 @@ private fun SettingsToggle(
             Text(
                 text = title,
                 fontSize = 16.sp,
-                color = Color.White,
+                color = uiTheme.onBackground,
             )
             Text(
                 text = subtitle,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.4f),
+                color = uiTheme.onBackground.copy(alpha = 0.4f),
             )
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color(0xFF7C4DFF),
-                checkedTrackColor = Color(0xFF7C4DFF).copy(alpha = 0.4f),
+                checkedThumbColor = uiTheme.primary,
+                checkedTrackColor = uiTheme.primary.copy(alpha = 0.4f),
             ),
         )
     }
@@ -510,12 +512,13 @@ private fun SettingsActionButton(
     accentColor: Color,
     onClick: () -> Unit,
 ) {
+    val uiTheme by ThemeManager.current.collectAsState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF141420))
+            .background(uiTheme.surface)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -540,12 +543,12 @@ private fun SettingsActionButton(
                 text = title,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White,
+                color = uiTheme.onSurface,
             )
             Text(
                 text = subtitle,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.4f),
+                color = uiTheme.onSurface.copy(alpha = 0.4f),
             )
         }
     }
