@@ -99,6 +99,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** In-memory cache of home page per wallpaper */
     private var allHomePages: MutableMap<String, Int> = mutableMapOf()
 
+    /** True once loadAllLayouts() has completed — guards against persisting empty data */
+    @Volatile
+    private var layoutsLoaded = false
+
     /** Serialize layout saves to avoid race conditions */
     private val layoutSaveMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -135,6 +139,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val type = object : TypeToken<Map<String, Int>>() {}.type
             allHomePages = gson.fromJson<Map<String, Int>>(hpJson, type).toMutableMap()
         }
+        layoutsLoaded = true
     }
 
     /**
@@ -238,6 +243,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _backgroundUri.value = uri
         viewModelScope.launch {
             dataStore.edit { it[KEY_BACKGROUND] = uri }
+            // Wait for layouts to be loaded before applying — avoids race condition on boot
+            if (!layoutsLoaded) {
+                Log.d("PixoraGrid", "switchWallpaper: waiting for layouts to load...")
+                while (!layoutsLoaded) kotlinx.coroutines.delay(50)
+            }
             applySavedSlotsForCurrentWallpaper()
         }
     }
@@ -319,7 +329,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Save associated with current wallpaper (or story ID)
         val uri = getLayoutKey()
         allLayouts[uri] = slots
-        persistLayouts()
+        persistLayouts(immediate = true)
         Log.d("PixoraGrid", "Saved layout for '$uri'")
     }
 
@@ -510,10 +520,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var persistJob: Job? = null
 
     /** Persist all layouts and home pages to DataStore (debounced + mutex-guarded) */
-    private fun persistLayouts() {
+    private fun persistLayouts(immediate: Boolean = false) {
+        // Guard: never persist if layouts haven't been loaded yet — would wipe all data
+        if (!layoutsLoaded) {
+            Log.w("PixoraGrid", "persistLayouts SKIPPED — layouts not loaded yet")
+            return
+        }
         persistJob?.cancel()
         persistJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(500) // debounce 500ms
+            if (!immediate) kotlinx.coroutines.delay(500) // debounce 500ms
             layoutSaveMutex.withLock {
                 dataStore.edit {
                     it[KEY_GRID_LAYOUTS] = gson.toJson(allLayouts)
@@ -529,7 +544,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         hasSavedLayout = false
         val uri = getLayoutKey()
         allLayouts.remove(uri)
-        persistLayouts()
+        persistLayouts(immediate = true)
         refreshGrid()
     }
 
@@ -573,7 +588,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _homePage.value = pageIndex
         val uri = getLayoutKey()
         allHomePages[uri] = pageIndex
-        persistLayouts()
+        persistLayouts(immediate = true)
         Log.d("PixoraGrid", "Set home page to $pageIndex for '$uri'")
     }
 
