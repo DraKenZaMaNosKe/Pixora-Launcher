@@ -37,6 +37,8 @@ class CatalogService(private val context: Context) {
 
     companion object {
         private const val CACHE_DURATION = 6 * 60 * 60 * 1000L // 6 hours
+        /** Max JSON response size: 5 MB */
+        private const val MAX_JSON_BYTES = 5L * 1024 * 1024
     }
 
     suspend fun getWallpapers(forceRefresh: Boolean = false): List<Wallpaper> = withContext(Dispatchers.IO) {
@@ -149,6 +151,18 @@ class CatalogService(private val context: Context) {
     private fun fetchUrl(url: String): String {
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
-        return response.use { it.body?.string() ?: throw Exception("Empty response") }
+        return response.use {
+            if (!it.isSuccessful) throw Exception("HTTP ${it.code}: ${it.message}")
+            val body = it.body ?: throw Exception("Empty response")
+            val contentLength = body.contentLength()
+            if (contentLength > MAX_JSON_BYTES) {
+                throw Exception("Response too large: $contentLength bytes")
+            }
+            val json = body.string()
+            if (json.length > MAX_JSON_BYTES) {
+                throw Exception("Response too large: ${json.length} chars")
+            }
+            json
+        }
     }
 }

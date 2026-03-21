@@ -49,7 +49,6 @@ fun CatalogScreen(
     val tabs = listOf("Wallpapers", "Stories", "Icon Rooms", "Day Cycle")
     val dayCycleThemes by viewModel.dayCycleThemes.collectAsState()
 
-    val wallpapers by viewModel.wallpapers.collectAsState()
     val stories by viewModel.stories.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
@@ -699,7 +698,7 @@ private fun DayCycleTab(
                                 onClick = {
                                     isActivating = true
                                     scope.launch {
-                                        val success = com.orbix.pixora.launcher.service.DayCycleManager.activate(
+                                        com.orbix.pixora.launcher.service.DayCycleManager.activate(
                                             context = context,
                                             theme = theme,
                                             downloadService = downloadService,

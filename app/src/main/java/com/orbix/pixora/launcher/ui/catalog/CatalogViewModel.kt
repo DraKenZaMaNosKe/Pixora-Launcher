@@ -10,6 +10,7 @@ import com.orbix.pixora.launcher.service.CatalogService
 import com.orbix.pixora.launcher.service.DayCycleCatalog
 import com.orbix.pixora.launcher.service.DayCycleTheme
 import com.orbix.pixora.launcher.service.DownloadService
+import com.orbix.pixora.launcher.service.NetworkHelper
 import com.orbix.pixora.launcher.service.WallpaperInstallService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,6 +64,16 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
                 _wallpapers.value = catalogService.getWallpapers()
                 _stories.value = catalogService.getStories()
                 _dayCycleThemes.value = catalogService.getDayCycleThemes()
+
+                // Surface feedback when no data could be loaded
+                if (_wallpapers.value.isEmpty() && _stories.value.isEmpty()) {
+                    val online = NetworkHelper.isOnline(getApplication())
+                    _error.value = if (online) {
+                        "Could not load catalog. Pull down to retry."
+                    } else {
+                        "No internet connection. Connect and try again."
+                    }
+                }
             } catch (e: Exception) {
                 _error.value = e.message
             }

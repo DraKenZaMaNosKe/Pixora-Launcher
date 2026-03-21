@@ -48,7 +48,7 @@ object AudioSessionTracker {
             addAction("android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION")
             addAction("android.media.action.CLOSE_AUDIO_EFFECT_CONTROL_SESSION")
         }
-        context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         Log.d(TAG, "AudioSessionTracker registered")
     }
 
