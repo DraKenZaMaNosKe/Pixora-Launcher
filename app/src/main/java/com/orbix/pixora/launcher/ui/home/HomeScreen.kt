@@ -40,6 +40,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -341,6 +342,8 @@ fun HomeScreen(
                             val targetPage = viewModel.moveAppToNextPage(pageOffset + fromLocal)
                             if (targetPage >= 0) {
                                 scope.launch {
+                                    snapshotFlow { pagerState.pageCount }
+                                        .first { it > targetPage }
                                     pagerState.animateScrollToPage(targetPage)
                                 }
                             }
@@ -351,11 +354,15 @@ fun HomeScreen(
                             if (targetPage == 0 && wasPagerPage == 0) {
                                 // Prepended new page: snap to shifted old page, then animate left
                                 scope.launch {
+                                    snapshotFlow { pagerState.pageCount }
+                                        .first { it > 1 }
                                     pagerState.scrollToPage(1)
                                     pagerState.animateScrollToPage(0)
                                 }
                             } else if (targetPage >= 0) {
                                 scope.launch {
+                                    snapshotFlow { pagerState.pageCount }
+                                        .first { it > targetPage }
                                     pagerState.animateScrollToPage(targetPage)
                                 }
                             }
@@ -770,7 +777,13 @@ fun HomeScreen(
                             val removed = viewModel.removePage(appPageIndex)
                             if (removed) {
                                 val newPage = (appPageIndex - 1).coerceAtLeast(0)
-                                scope.launch { pagerState.animateScrollToPage(newPage) }
+                                val prevCount = pagerState.pageCount
+                                scope.launch {
+                                    // Wait for pagerState to reflect the reduced page count
+                                    snapshotFlow { pagerState.pageCount }
+                                        .first { it < prevCount }
+                                    pagerState.animateScrollToPage(newPage)
+                                }
                             } else {
                                 scope.launch { snackbarHostState.showSnackbar("Move icons first to delete this page") }
                             }
@@ -792,7 +805,12 @@ fun HomeScreen(
                         .background(uiTheme.primary.copy(alpha = 0.6f))
                         .clickable {
                             val newPage = viewModel.addPageAfter(pagerState.currentPage)
-                            scope.launch { pagerState.animateScrollToPage(newPage) }
+                            scope.launch {
+                                // Wait for pagerState to reflect the new page count
+                                snapshotFlow { pagerState.pageCount }
+                                    .first { it > newPage }
+                                pagerState.animateScrollToPage(newPage)
+                            }
                         },
                     contentAlignment = Alignment.Center,
                 ) {
