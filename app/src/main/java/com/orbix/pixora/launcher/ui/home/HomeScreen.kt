@@ -53,6 +53,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.translate
@@ -78,6 +79,13 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Size as CoilSize
 import com.orbix.pixora.launcher.LauncherActivity
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import com.orbix.pixora.launcher.audio.SoundEngine
 import com.orbix.pixora.launcher.ui.tutorial.CoachMarkOverlay
 import com.orbix.pixora.launcher.ui.tutorial.TutorialManager
@@ -117,6 +125,7 @@ fun HomeScreen(
     val eqStyleName by viewModel.equalizerStyle.collectAsState()
     val eqStyle = try { EqualizerStyle.valueOf(eqStyleName) } catch (_: Exception) { EqualizerStyle.CLASSIC }
     val recentApps by viewModel.recentApps.collectAsState()
+    val isReloading by viewModel.isReloading.collectAsState()
 
     // Story state
     val activeStory by StoryManager.activeStory.collectAsState()
@@ -846,6 +855,15 @@ fun HomeScreen(
             )
         }
 
+        // ── Reload overlay ──
+        // Shows a smooth loading animation while layouts reload from disk
+        ReloadOverlay(
+            isReloading = isReloading,
+            bgImageData = bgImageData,
+            primaryColor = uiTheme.primary,
+            secondaryColor = uiTheme.secondary,
+        )
+
         // ── Tutorials ──
         // Home tour (first time only)
         var showHomeTour by remember { mutableStateOf(false) }
@@ -1017,6 +1035,124 @@ private fun buildStoryAnnotatedString(text: String, accentColor: Color): Annotat
                     withStyle(SpanStyle(
                         color = Color.White.copy(alpha = 0.85f),
                     )) { append(word) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Full-screen reload overlay with progressive background fade-in and spinning dots.
+ * Appears while the ViewModel reloads layouts from disk on resume.
+ */
+@Composable
+private fun ReloadOverlay(
+    isReloading: Boolean,
+    bgImageData: Any,
+    primaryColor: Color,
+    secondaryColor: Color,
+) {
+    // Animate overlay alpha: fade in when reloading, fade out when done
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (isReloading) 1f else 0f,
+        animationSpec = tween(durationMillis = if (isReloading) 150 else 500),
+        label = "reload_overlay_alpha",
+    )
+
+    if (overlayAlpha <= 0f) return
+
+    val context = LocalContext.current
+
+    // Background image fade-in: starts dim, progressively reveals
+    val bgReveal by animateFloatAsState(
+        targetValue = if (isReloading) 0.85f else 1f,
+        animationSpec = tween(durationMillis = 800),
+        label = "bg_reveal",
+    )
+
+    // Spinning dots animation
+    val infiniteTransition = rememberInfiniteTransition(label = "reload_spinner")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "spinner_rotation",
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.4f * overlayAlpha)),
+        contentAlignment = Alignment.Center,
+    ) {
+        // Background image fading in
+        val bgPainter = rememberAsyncImagePainter(
+            model = ImageRequest.Builder(context)
+                .data(bgImageData)
+                .crossfade(false)
+                .size(CoilSize.ORIGINAL)
+                .build()
+        )
+        Image(
+            painter = bgPainter,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = bgReveal * overlayAlpha },
+        )
+
+        // Dark scrim over image for contrast
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f * overlayAlpha)),
+        )
+
+        // Spinning dots (Windows-style ring spinner)
+        val dotCount = 8
+        val ringRadius = 20.dp
+        Canvas(
+            modifier = Modifier
+                .size(60.dp)
+                .graphicsLayer { alpha = overlayAlpha },
+        ) {
+            val cx = size.width / 2
+            val cy = size.height / 2
+            val r = ringRadius.toPx()
+
+            for (i in 0 until dotCount) {
+                val angle = Math.toRadians((rotation + i * (360.0 / dotCount)).toDouble())
+                val x = cx + r * kotlin.math.cos(angle).toFloat()
+                val y = cy + r * kotlin.math.sin(angle).toFloat()
+
+                // Each dot fades: leading dots are bright, trailing dots are dim
+                val dotAlpha = (1f - i.toFloat() / dotCount).coerceIn(0.15f, 1f)
+                val dotRadius = (3.5f - i * 0.25f).coerceAtLeast(1.5f)
+
+                // Gradient color from primary to secondary
+                val blend = i.toFloat() / dotCount
+                val dotColor = Color(
+                    red = primaryColor.red * (1 - blend) + secondaryColor.red * blend,
+                    green = primaryColor.green * (1 - blend) + secondaryColor.green * blend,
+                    blue = primaryColor.blue * (1 - blend) + secondaryColor.blue * blend,
+                )
+
+                drawCircle(
+                    color = dotColor.copy(alpha = dotAlpha),
+                    radius = dotRadius,
+                    center = Offset(x, y),
+                )
+                // Glow around leading dots
+                if (i < 3) {
+                    drawCircle(
+                        color = dotColor.copy(alpha = dotAlpha * 0.3f),
+                        radius = dotRadius * 2.5f,
+                        center = Offset(x, y),
+                    )
                 }
             }
         }

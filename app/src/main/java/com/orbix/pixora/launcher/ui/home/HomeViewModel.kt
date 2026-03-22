@@ -55,6 +55,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isEditMode = MutableStateFlow(false)
     val isEditMode: StateFlow<Boolean> = _isEditMode
 
+    private val _isReloading = MutableStateFlow(false)
+    val isReloading: StateFlow<Boolean> = _isReloading
+
     /** The page index that acts as "home" — launcher opens here */
     private val _homePage = MutableStateFlow(0)
     val homePage: StateFlow<Int> = _homePage
@@ -106,6 +109,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Serialize layout saves to avoid race conditions */
     private val layoutSaveMutex = kotlinx.coroutines.sync.Mutex()
 
+    /** True once installed apps have been loaded at least once */
+    @Volatile
+    private var appsLoaded = false
+
     init {
         loadApps()
         loadBackgroundThenGrid()
@@ -152,7 +159,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Apply the saved slots for the current wallpaper, or default to alphabetical */
-    private fun applySavedSlotsForCurrentWallpaper() {
+    private suspend fun applySavedSlotsForCurrentWallpaper() {
+        // Wait for installed apps to be available before building the grid
+        if (!appsLoaded) {
+            Log.d("PixoraGrid", "applySavedSlots: waiting for apps to load...")
+            while (!appsLoaded) kotlinx.coroutines.delay(50)
+        }
         val uri = getLayoutKey()
         val saved = allLayouts[uri]?.toMutableList()
         // Clean empty leading/trailing pages from saved data
@@ -179,7 +191,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun loadApps() {
         viewModelScope.launch(Dispatchers.IO) {
             _installedApps.value = appsRepo.getInstalledApps()
-            refreshGrid()
+            appsLoaded = true
+            // Only call refreshGrid if layouts are already loaded (avoid race with loadBackgroundThenGrid)
+            if (layoutsLoaded) refreshGrid()
         }
     }
 
@@ -687,6 +701,37 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openDrawer() { _isDrawerOpen.value = true }
     fun closeDrawer() { _isDrawerOpen.value = false }
+
+    /**
+     * Reload layouts and installed apps from disk.
+     * Called on every Activity resume to ensure the grid is always up-to-date
+     * after process death, long absence, or app install/uninstall.
+     */
+    fun reloadFromDisk() {
+        viewModelScope.launch {
+            _isReloading.value = true
+
+            // Refresh installed apps (may have changed)
+            val freshApps = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                appsRepo.getInstalledApps()
+            }
+            _installedApps.value = freshApps
+            appsLoaded = true
+
+            // Re-read layouts from DataStore (authoritative source)
+            loadAllLayouts()
+
+            // Re-read background URI
+            val savedBg = dataStore.data.map { it[KEY_BACKGROUND] }.first()
+            if (savedBg != null) _backgroundUri.value = savedBg
+
+            // Reapply the correct layout for current wallpaper
+            applySavedSlotsForCurrentWallpaper()
+            Log.d("PixoraGrid", "reloadFromDisk: complete")
+
+            _isReloading.value = false
+        }
+    }
 
     // ── Recent Apps ──────────────────────────────────────────
 

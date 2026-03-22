@@ -60,6 +60,10 @@ class LauncherActivity : ComponentActivity() {
         private val _homeButtonPressed = MutableStateFlow(0L)
         val homeButtonPressed: StateFlow<Long> = _homeButtonPressed
 
+        /** Emits a timestamp whenever the Activity resumes (launcher becomes visible) */
+        private val _resumeEvent = MutableStateFlow(0L)
+        val resumeEvent: StateFlow<Long> = _resumeEvent
+
         /** Show the equalizer explanation dialog before MediaProjection */
         val showEqExplanation = mutableStateOf(false)
         var onEqExplanationAccepted: (() -> Unit)? = null
@@ -285,6 +289,17 @@ class LauncherActivity : ComponentActivity() {
                 Toast.makeText(this, "Open Settings > Apps > Default apps > Home app", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    /**
+     * Called every time the launcher becomes visible again (after process death,
+     * returning from another app, screen unlock, etc.).
+     * Emits a resume event so the ViewModel can reload layouts from disk.
+     */
+    override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "onResume — emitting resume event")
+        _resumeEvent.value = System.currentTimeMillis()
     }
 
     /**

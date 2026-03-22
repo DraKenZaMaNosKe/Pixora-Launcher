@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.orbix.pixora.launcher.LauncherActivity
 import com.orbix.pixora.launcher.data.models.IconRoom
 import com.orbix.pixora.launcher.data.models.Story
 import com.orbix.pixora.launcher.data.models.Wallpaper
@@ -41,6 +42,15 @@ fun PixoraLauncherApp(
     var showWallpaperPreview by remember { mutableStateOf(false) }
     var showStoryDetail by remember { mutableStateOf(false) }
     var showIconRoomPreview by remember { mutableStateOf(false) }
+
+    // Reload layouts from disk every time the launcher resumes
+    // (after process death, returning from apps, screen unlock, etc.)
+    val resumeEvent by LauncherActivity.resumeEvent.collectAsState()
+    LaunchedEffect(resumeEvent) {
+        if (resumeEvent > 0L) {
+            homeViewModel.reloadFromDisk()
+        }
+    }
 
     var selectedWallpaper by remember { mutableStateOf<Wallpaper?>(null) }
     var selectedStory by remember { mutableStateOf<Story?>(null) }
