@@ -8,11 +8,10 @@ import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.datastore.preferences.core.edit
 import androidx.activity.compose.setContent
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
@@ -46,8 +45,12 @@ import com.orbix.pixora.launcher.audio.SoundEngine
 import com.orbix.pixora.launcher.ui.theme.ThemeManager
 import com.orbix.pixora.launcher.service.DayCycleManager
 import com.orbix.pixora.launcher.service.StoryManager
+import com.orbix.pixora.launcher.ui.EffectKeys
 import com.orbix.pixora.launcher.ui.PixoraLauncherApp
+import com.orbix.pixora.launcher.ui.pixoraDataStore
 import com.orbix.pixora.launcher.ui.theme.PixoraTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -195,6 +198,20 @@ class LauncherActivity : ComponentActivity() {
                                     fontSize = 13.sp,
                                 )
                             }
+                            TextButton(
+                                onClick = {
+                                    showEqExplanation.value = false
+                                    lifecycleScope.launch {
+                                        pixoraDataStore.edit { it[EffectKeys.EQ_PROMPT_DISMISSED] = true }
+                                    }
+                                },
+                            ) {
+                                Text(
+                                    "Don't ask again",
+                                    color = Color.White.copy(alpha = 0.25f),
+                                    fontSize = 12.sp,
+                                )
+                            }
                         }
                     }
                 }
@@ -211,7 +228,14 @@ class LauncherActivity : ComponentActivity() {
         }
     }
 
-    private fun checkAndRequestPermissions() {
+    private suspend fun checkAndRequestPermissions() {
+        // Skip if the user dismissed the prompt permanently
+        val dismissed = pixoraDataStore.data.map { it[EffectKeys.EQ_PROMPT_DISMISSED] ?: false }.first()
+        if (dismissed) {
+            Log.d(TAG, "EQ prompt dismissed by user, skipping")
+            return
+        }
+
         Log.d(TAG, "checkAndRequestPermissions")
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
@@ -255,15 +279,16 @@ class LauncherActivity : ComponentActivity() {
         Log.d(TAG, "Reconnecting equalizer...")
         AudioCaptureService.stop(applicationContext)
         // Small delay to let the service fully stop before re-requesting
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+        lifecycleScope.launch {
+            delay(500)
+            if (ContextCompat.checkSelfPermission(this@LauncherActivity, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED
             ) {
                 recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
             } else {
                 requestMediaProjection()
             }
-        }, 500)
+        }
     }
 
     /**
@@ -291,15 +316,31 @@ class LauncherActivity : ComponentActivity() {
         }
     }
 
+    /** Tracks whether the activity was actually stopped (went to background).
+     *  Starts as true so the first onResume after creation (including process death) triggers reload. */
+    private var wasStopped = true
+
+    override fun onStop() {
+        super.onStop()
+        wasStopped = true
+        Log.d(TAG, "onStop — marking as stopped")
+    }
+
     /**
-     * Called every time the launcher becomes visible again (after process death,
-     * returning from another app, screen unlock, etc.).
-     * Emits a resume event so the ViewModel can reload layouts from disk.
+     * Called every time the launcher becomes visible again.
+     * Only emits a reload event if the activity was actually stopped
+     * (returning from another app, screen unlock, process death).
+     * Skips reload when the home button is pressed while already on the launcher.
      */
     override fun onResume() {
         super.onResume()
-        Log.d(TAG, "onResume — emitting resume event")
-        _resumeEvent.value = System.currentTimeMillis()
+        if (wasStopped) {
+            wasStopped = false
+            Log.d(TAG, "onResume — was stopped, emitting resume event for reload")
+            _resumeEvent.value = System.currentTimeMillis()
+        } else {
+            Log.d(TAG, "onResume — was NOT stopped, skipping reload")
+        }
     }
 
     /**

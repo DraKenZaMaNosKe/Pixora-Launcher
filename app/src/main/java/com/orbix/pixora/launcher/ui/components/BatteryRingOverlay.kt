@@ -135,7 +135,7 @@ fun BatteryRingOverlay(
 
         // "%" label
         val labelResult = textMeasurer.measure(
-            AnnotatedString(if (isCharging) "%" else "%"),
+            AnnotatedString("%"),
             style = TextStyle(
                 fontSize = 10.sp,
                 color = Color.White.copy(alpha = 0.5f),

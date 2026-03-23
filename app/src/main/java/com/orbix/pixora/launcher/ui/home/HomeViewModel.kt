@@ -702,21 +702,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun openDrawer() { _isDrawerOpen.value = true }
     fun closeDrawer() { _isDrawerOpen.value = false }
 
+    /** Timestamp of last reload — prevents duplicate triggers from onNewIntent + onResume */
+    private var lastReloadTime = 0L
+
     /**
      * Reload layouts and installed apps from disk.
-     * Called on every Activity resume to ensure the grid is always up-to-date
-     * after process death, long absence, or app install/uninstall.
+     * Called on every Activity resume to ensure the grid is always up-to-date.
+     *
+     * Two modes:
+     * - SKIP: Data already in memory (ViewModel survived) → nothing to do.
+     * - FULL: Process was killed (grid empty, layouts not loaded) → full reload from
+     *   DataStore with loading animation.
      */
     fun reloadFromDisk() {
+        // Debounce: skip if called again within 2 seconds (onNewIntent + onResume fire together)
+        val now = System.currentTimeMillis()
+        if (now - lastReloadTime < 2000) {
+            Log.d("PixoraGrid", "reloadFromDisk: debounced (duplicate trigger)")
+            return
+        }
+        lastReloadTime = now
+
+        // Data already in memory — ViewModel survived, nothing to reload
+        if (layoutsLoaded && appsLoaded && _gridSlots.value.isNotEmpty()) {
+            Log.d("PixoraGrid", "reloadFromDisk: skipped (data in memory)")
+            return
+        }
+
+        // Full reload — process was killed, need everything from disk
         viewModelScope.launch {
             _isReloading.value = true
 
-            // Refresh installed apps (may have changed)
-            val freshApps = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                appsRepo.getInstalledApps()
+            // Wait for init's loadApps() if it's already running, instead of loading again
+            if (!appsLoaded) {
+                Log.d("PixoraGrid", "reloadFromDisk: waiting for apps from init...")
+                while (!appsLoaded) kotlinx.coroutines.delay(50)
             }
-            _installedApps.value = freshApps
-            appsLoaded = true
 
             // Re-read layouts from DataStore (authoritative source)
             loadAllLayouts()
@@ -727,7 +748,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
             // Reapply the correct layout for current wallpaper
             applySavedSlotsForCurrentWallpaper()
-            Log.d("PixoraGrid", "reloadFromDisk: complete")
+            Log.d("PixoraGrid", "reloadFromDisk: full reload complete")
 
             _isReloading.value = false
         }

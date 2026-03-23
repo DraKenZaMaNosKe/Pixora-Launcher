@@ -15,4 +15,5 @@ object EffectKeys {
     val SYSTEM_RINGS = booleanPreferencesKey("effect_system_rings")
     val AMBIENT_PARTICLES = booleanPreferencesKey("effect_ambient_particles")
     val EQUALIZER_STYLE = stringPreferencesKey("equalizer_style")
+    val EQ_PROMPT_DISMISSED = booleanPreferencesKey("eq_prompt_dismissed")
 }

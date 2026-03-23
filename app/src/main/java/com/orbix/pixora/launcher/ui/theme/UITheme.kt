@@ -5,7 +5,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.orbix.pixora.launcher.ui.pixoraDataStore
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,9 @@ object ThemeManager {
     private val _current = MutableStateFlow(Themes.NEON_NIGHT)
     val current: StateFlow<UITheme> = _current
 
+    /** Dedicated scope for fire-and-forget persistence (survives config changes) */
+    private val persistScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
     suspend fun loadState(context: Context) {
         val id = context.pixoraDataStore.data.first()[KEY_THEME] ?: "neon_night"
         _current.value = Themes.ALL.find { it.id == id } ?: Themes.NEON_NIGHT
@@ -43,8 +47,7 @@ object ThemeManager {
 
     fun setTheme(context: Context, theme: UITheme) {
         _current.value = theme
-        @Suppress("OPT_IN_USAGE")
-        GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        persistScope.launch {
             context.pixoraDataStore.edit { it[KEY_THEME] = theme.id }
         }
     }

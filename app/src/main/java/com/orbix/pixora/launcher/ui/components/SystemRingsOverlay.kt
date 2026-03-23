@@ -1,7 +1,12 @@
 package com.orbix.pixora.launcher.ui.components
 
 import android.app.ActivityManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
+import android.os.Build
 import android.os.StatFs
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -28,9 +33,10 @@ fun SystemRingsOverlay(
     val context = LocalContext.current
     var ramPercent by remember { mutableFloatStateOf(0f) }
     var diskPercent by remember { mutableFloatStateOf(0f) }
+    var tempCelsius by remember { mutableFloatStateOf(0f) }
     var animTime by remember { mutableLongStateOf(0L) }
 
-    // Read system info periodically
+    // Read RAM + disk periodically
     LaunchedEffect(Unit) {
         while (true) {
             val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -49,6 +55,25 @@ fun SystemRingsOverlay(
         }
     }
 
+    // Read battery temperature via sticky broadcast
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                intent?.let {
+                    // EXTRA_TEMPERATURE is in tenths of °C (e.g. 315 = 31.5°C)
+                    val raw = it.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)
+                    tempCelsius = raw / 10f
+                }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        }
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
     // Animation tick
     LaunchedEffect(Unit) {
         while (true) {
@@ -59,7 +84,7 @@ fun SystemRingsOverlay(
 
     val textMeasurer = rememberTextMeasurer()
 
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // RAM ring
         Canvas(modifier = Modifier.size(52.dp)) {
             drawMiniRing(
@@ -76,6 +101,16 @@ fun SystemRingsOverlay(
             drawMiniRing(
                 label = "DISK",
                 percent = diskPercent,
+                glowColor = glowColor,
+                animTime = animTime,
+                textMeasurer = textMeasurer,
+            )
+        }
+
+        // Temperature ring
+        Canvas(modifier = Modifier.size(52.dp)) {
+            drawTempRing(
+                tempCelsius = tempCelsius,
                 glowColor = glowColor,
                 animTime = animTime,
                 textMeasurer = textMeasurer,
@@ -152,6 +187,86 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMiniRing(
         topLeft = Offset(
             center.x - labelResult.size.width / 2f,
             center.y + pctResult.size.height / 2f - 2f,
+        )
+    )
+}
+
+/**
+ * Temperature ring: maps 20°C–50°C to the arc.
+ * Colors: cool (theme) → warm (orange) → hot (red).
+ */
+@OptIn(ExperimentalTextApi::class)
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTempRing(
+    tempCelsius: Float,
+    glowColor: Color,
+    animTime: Long,
+    textMeasurer: TextMeasurer,
+) {
+    val center = Offset(size.width / 2f, size.height / 2f)
+    val radius = size.minDimension / 2f - 6f
+    val strokeWidth = 5f
+
+    // Normalize: 20°C = 0%, 50°C = 100%
+    val percent = ((tempCelsius - 20f) / 30f).coerceIn(0f, 1f)
+    val sweepAngle = percent * 360f
+
+    val ringColor = when {
+        tempCelsius >= 45f -> Color(0xFFFF1744) // Hot — red
+        tempCelsius >= 38f -> Color(0xFFFF9800) // Warm — orange
+        tempCelsius >= 32f -> Color(0xFFFFEB3B) // Mild — yellow
+        else -> glowColor                       // Cool — theme color
+    }
+
+    // Heat pulse: faster when hotter
+    val pulseSpeed = if (tempCelsius >= 40f) 800f else 1500f
+    val breathAlpha = 0.8f + 0.2f * sin(animTime / pulseSpeed).toFloat()
+
+    // Background ring
+    drawArc(
+        color = Color.White.copy(alpha = 0.06f),
+        startAngle = -90f,
+        sweepAngle = 360f,
+        useCenter = false,
+        topLeft = Offset(center.x - radius, center.y - radius),
+        size = Size(radius * 2, radius * 2),
+        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+    )
+
+    // Active arc
+    drawArc(
+        color = ringColor.copy(alpha = breathAlpha),
+        startAngle = -90f,
+        sweepAngle = sweepAngle,
+        useCenter = false,
+        topLeft = Offset(center.x - radius, center.y - radius),
+        size = Size(radius * 2, radius * 2),
+        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+    )
+
+    // Temperature text
+    val tempText = "${tempCelsius.toInt()}°"
+    val tempResult = textMeasurer.measure(
+        AnnotatedString(tempText),
+        style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+    )
+    drawText(
+        tempResult,
+        topLeft = Offset(
+            center.x - tempResult.size.width / 2f,
+            center.y - tempResult.size.height / 2f - 2f,
+        )
+    )
+
+    // Label
+    val labelResult = textMeasurer.measure(
+        AnnotatedString("TEMP"),
+        style = TextStyle(fontSize = 7.sp, color = Color.White.copy(alpha = 0.4f))
+    )
+    drawText(
+        labelResult,
+        topLeft = Offset(
+            center.x - labelResult.size.width / 2f,
+            center.y + tempResult.size.height / 2f - 2f,
         )
     )
 }
